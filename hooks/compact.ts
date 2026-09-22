@@ -6,10 +6,12 @@
 // 2. turn.complete: request compaction early, refresh the status line.
 // 3. ui.render: a dim line under each Bash row Jev judged, and a pane
 //    reporting a compaction.
+// 4. /jevgate: a registered slash command that opens a stats pane, no model
+//    turn and no shell involved.
 //
 // Everything UI is best-effort and must never break the hooks it decorates.
 // The validator follows `$` only within this file, so all of it lives here.
-import type { On, PluginOptions, Register, SessionMessage } from 'claude-code';
+import type { EngineInterface, On, PluginOptions, Register, SessionMessage } from 'claude-code';
 import { fromRaw, type Config } from '../src/config.ts';
 import { ask, noul, type FetchLike } from '../src/jev.ts';
 import {
@@ -27,14 +29,17 @@ import {
   bashRowText,
   parseLog,
   kb,
+  bashStats,
+  type BashStats,
   type LogEntry,
   type CompactionRow,
   type CompactionReport,
 } from '../src/ui-model.ts';
 
-type Host = Parameters<Parameters<On>[1]>[0];
+type Host = EngineInterface;
 
 const PANE_ID = 'jevgate-compaction';
+const STATS_PANE_ID = 'jevgate-stats';
 const MAX_LOG_CHARS = 512 * 1024;
 
 async function resolveApiKey($: Host, cfg: Config): Promise<string | undefined> {
@@ -83,6 +88,7 @@ type UiRuntime = {
   compactions: CompactionReport[];
   rowCache: Map<string, string | undefined>;
   footer: string | undefined;
+  stats?: { session: BashStats; all: BashStats; sessionId: string; entries: number };
 };
 
 function cacheRows(ui: UiRuntime, entries: readonly LogEntry[]): void {
@@ -192,6 +198,62 @@ export const register: Register = (on: On, options: PluginOptions) => {
     }
   });
 
+  on('session.start', async ($, e, next) => {
+    try {
+      await $.command.register({ name: 'jevgate', description: 'jevgate guard tally: this session and all-time', immediate: true });
+    } catch (err) {
+      $.ui.log(`jevgate: /jevgate not registered (${err instanceof Error ? err.message : String(err)})`);
+    }
+    return next(e);
+  });
+
+  on('command.run', { command: 'jevgate' }, async ($) => {
+    const [entries, sessionId] = await Promise.all([readLog($), $.session.id()]);
+    ui.stats = { session: bashStats(entries, sessionId), all: bashStats(entries), sessionId, entries: entries.length };
+    const rows = 8 + Math.min(6, ui.stats.all.categories.length);
+    try {
+      await $.ui.open({ id: STATS_PANE_ID, title: 'jevgate', closeOnEscape: true, rows });
+      $.ui.invalidate('ui.render');
+      return {};
+    } catch {
+      // no panel surface: fall back to a text row
+      const s = ui.stats;
+      const line = (label: string, x: BashStats) =>
+        `${label}: free ${x.free} · ok ${x.ok} (allow ${x.allowed}) · denied ${x.denied} · unreachable ${x.unreachable} · avg ${x.avgMs}ms`;
+      return { text: `${line('session', s.session)}\n${line('all-time', s.all)}` };
+    }
+  });
+
+  on('ui.render', { component: 'Pane', requestId: STATS_PANE_ID }, async ($, e, next) => {
+    const s = ui.stats;
+    if (!s) return next(e);
+    const { Box, Text } = $.ui.resolve(e);
+    const judged = (x: BashStats) => x.ok + x.denied + x.unreachable;
+    const pct = (n: number, total: number) => (total ? `${Math.round((100 * n) / total)}%` : '-');
+    const row = (label: string, x: BashStats) => {
+      const total = x.free + judged(x);
+      return h(
+        Text,
+        { wrap: 'truncate-end' },
+        `${label.padEnd(9)} ${String(total).padStart(5)} calls   free ${String(x.free).padStart(4)} (${pct(x.free, total).padStart(4)})   ok ${String(x.ok).padStart(4)}   allow ${String(x.allowed).padStart(4)}   denied ${String(x.denied).padStart(3)}   unreachable ${String(x.unreachable).padStart(3)}   avg ${String(x.avgMs).padStart(4)}ms`,
+      );
+    };
+    const cats = s.all.categories.slice(0, 6).map(([c, n]) => h(Text, { dimColor: true }, `  ${c.padEnd(40)} ${String(n).padStart(3)}`));
+    return h(
+      Box,
+      { flexDirection: 'column', width: e.props.bodyColumns, paddingX: 1 },
+      h(Text, { bold: true }, 'jevgate guard · bash and file tools'),
+      h(Text, { dimColor: true }, 'free = Claude Code read-only set, never asked · ok = judged, ran (allow skipped the classifier) · denied = refused'),
+      h(Text, {}, ''),
+      row('session', s.session),
+      row('all-time', s.all),
+      h(Text, {}, ''),
+      h(Text, { bold: cats.length > 0 }, cats.length ? 'denied by category, all-time' : 'nothing denied yet'),
+      ...cats,
+      h(Text, { dimColor: true }, `done-check ✗${s.session.blocks} · subagent ⇢${s.session.agentDenies} this session · ${s.entries} log entries   (Esc closes)`),
+    );
+  });
+
   // After each guarded call settles, the gate's log entry exists: tick the footer now, not at turn end.
   on('tool.call', async ($, e, next) => {
     const result = await next(e);
@@ -222,7 +284,8 @@ export const register: Register = (on: On, options: PluginOptions) => {
     return next({ ...e, props: { ...e.props, modes: [...e.props.modes, ui.footer] } });
   });
 
-  const decorate = async ($: Host, e: Parameters<Parameters<On>[1]>[1], next: Parameters<Parameters<On>[1]>[2]) => {
+  for (const tool of ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read']) {
+    on('ui.render', { component: 'ToolUse', props: { tool } }, async ($, e, next) => {
     const engineRow = await next(e);
     try {
       if (!rowCache.has(e.requestId)) {
@@ -236,9 +299,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
     } catch {
       return engineRow;
     }
-  };
-  for (const tool of ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read']) {
-    on('ui.render', { component: 'ToolUse', props: { tool } }, decorate);
+    });
   }
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => {

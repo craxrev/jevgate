@@ -14,7 +14,7 @@ feature depends on another.
 | Verbatim compaction | `session.compact` function hook (early access) | Replaces the compaction summary with the original messages, long tool outputs truncated. Never rewrites text, never drops a call. Jev ranks which outputs to restore verbatim. Triggers at 60% context. | on |
 
 Every decision is appended as JSON lines to `~/.claude/plugins/data/jevgate*/decisions.jsonl`
-(or `~/.claude/jevgate/decisions.jsonl` when run from `--plugin-dir`). `/jevgate` prints the tally.
+(or `~/.claude/jevgate/decisions.jsonl` when run from `--plugin-dir`). `/jevgate` opens a panel with the tally.
 
 ## Requirements
 

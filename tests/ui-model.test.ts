@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseLog, tally, statusText, bashRowText, kb } from '../src/ui-model.ts';
+import { parseLog, tally, statusText, footerLabel, bashRowText, kb } from '../src/ui-model.ts';
 
 const log = [
   { ts: 't', feature: 'bash', action: 'allow', session: 's1', tool_use_id: 'a', scores: { read_only: 0.98, dev_task: 0.01, unsafe: 0.02 }, ms: 340 },
@@ -25,6 +25,11 @@ test('tally counts per session', () => {
 test('statusText is compact and empty when nothing happened', () => {
   assert.equal(statusText({ allowed: 0, passed: 0, passthrough: 0, blocks: 0, agentDenies: 0 }, 0), undefined);
   assert.equal(statusText({ allowed: 3, passed: 1, passthrough: 9, blocks: 0, agentDenies: 0 }, 2), 'jev ✓3 fast-lane · ↷1 classifier · ⇊2 compact');
+});
+
+test('footerLabel is the short form', () => {
+  assert.equal(footerLabel({ allowed: 0, passed: 0, passthrough: 0, blocks: 0, agentDenies: 0 }, 0), undefined);
+  assert.equal(footerLabel({ allowed: 5, passed: 1, passthrough: 9, blocks: 1, agentDenies: 0 }, 1), 'jev ✓5 ↷1 ⛔1 ⇊1');
 });
 
 test('bashRowText only for judged commands', () => {

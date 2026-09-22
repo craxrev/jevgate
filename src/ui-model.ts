@@ -60,6 +60,17 @@ export function tally(entries: readonly LogEntry[], session: string): Tally {
   return t;
 }
 
+/** Short form for the prompt footer's mode labels: `jev ✓5 ↷1 ⛔1 ⇊1`. */
+export function footerLabel(t: Tally, compactions: number): string | undefined {
+  const parts: string[] = [];
+  if (t.allowed) parts.push(`✓${t.allowed}`);
+  if (t.passed) parts.push(`↷${t.passed}`);
+  if (t.blocks) parts.push(`⛔${t.blocks}`);
+  if (t.agentDenies) parts.push(`⊘${t.agentDenies}`);
+  if (compactions) parts.push(`⇊${compactions}`);
+  return parts.length ? `jev ${parts.join(' ')}` : undefined;
+}
+
 export function statusText(t: Tally, compactions: number): string | undefined {
   const parts: string[] = [];
   if (t.allowed) parts.push(`✓${t.allowed} fast-lane`);

@@ -23,7 +23,7 @@ import {
 } from '../src/compact-core.ts';
 import {
   tally,
-  statusText,
+  footerLabel,
   bashRowText,
   parseLog,
   kb,
@@ -83,6 +83,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
   let compacting = false;
   const compactions: CompactionReport[] = [];
   const rowCache = new Map<string, string | undefined>();
+  let footer: string | undefined;
 
   const cacheRows = (entries: readonly LogEntry[]) => {
     for (const en of entries) if (en.tool_use_id) rowCache.set(en.tool_use_id, bashRowText(en));
@@ -172,10 +173,14 @@ export const register: Register = (on: On, options: PluginOptions) => {
   on('turn.complete', async ($, e, next) => {
     try {
       const [entries, session] = await Promise.all([readLog($), $.session.id()]);
-      $.ui.status(statusText(tally(entries, session), compactions.length));
+      const label = footerLabel(tally(entries, session), compactions.length);
       cacheRows(entries);
+      if (label !== footer) {
+        footer = label;
+        $.ui.invalidate('ui.render');
+      }
     } catch {
-      // status is decoration
+      // the footer is decoration
     }
     if (!cfg.compactEnabled || compacting) return next(e);
     try {
@@ -190,6 +195,12 @@ export const register: Register = (on: On, options: PluginOptions) => {
       compacting = false;
     }
     return next(e);
+  });
+
+  // The dim mode labels at the right of the prompt footer: add ours as one more label.
+  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+    if (!footer) return next(e);
+    return next({ ...e, props: { ...e.props, modes: [...e.props.modes, footer] } });
   });
 
   on('ui.render', { component: 'ToolUse', props: { tool: 'Bash' } }, async ($, e, next) => {

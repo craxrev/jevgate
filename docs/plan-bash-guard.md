@@ -56,7 +56,7 @@ Other features (done-check, subagent gate, compaction, UI) are unchanged.
   `transcript_path`). One Jev call. On any category over threshold, emit
   PreToolUse `deny` with `permissionDecisionReason` naming the category and
   score. Else silent. Log `ok` / `denied` with all scores.
-- Fail-open: any error or timeout → silent (bypass runs it). Log `error`.
+- Fail-closed: any Jev error or timeout → deny with reason `jevgate: Jev unreachable, refusing to run unguarded`. Free commands still run. Log `unreachable`.
 - Optional `bashMode` config: `guard` (default, deny) | `fastlane` (legacy
   allow behavior for auto-mode users). Keep `fastlane` minimal or drop it.
 
@@ -90,7 +90,7 @@ Other features (done-check, subagent gate, compaction, UI) are unchanged.
 ### User settings (manual, by the user)
 - Switch to bypass: `permissions.defaultMode: "bypassPermissions"` or run
   `claude --dangerously-skip-permissions`.
-- Empty `permissions.deny` gradually once the guard proves itself in the log.
+- Empty `permissions.deny` once the guard is live; no backstop rules needed since the hook fails closed.
 
 ## Reference: Claude Code 2.1.274 read-only rules (from the binary)
 
@@ -174,8 +174,6 @@ today: 76.5%. Compound: 82.9% of calls. Scripts: python3 1262, python 294, uv
 
 ## Open questions
 
-- Fail-open vs a minimal `permissions.deny` floor (2–3 rules) while Jev is
-  unavailable.
 - Whether `exceeds_request` is worth its false positives at 0.8, or should
   log-only at first.
 - Whether to guard `Agent` spawns and `SendMessage` in bypass mode too, since

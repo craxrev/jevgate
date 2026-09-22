@@ -27,10 +27,11 @@ test('statsLines fits the pane width and carries the styles', () => {
   for (const l of lines) assert.ok(l.text.length <= 44, `${l.text.length}: ${l.text}`);
   assert.equal(lines[0]!.text, 'jevgate');
   assert.match(lines[2]!.text, /^This session · 54 calls$/);
-  const allow = lines.find((l) => l.text.trimStart().startsWith('allow'))!;
+  const allow = lines.find((l) => l.text.trimStart().startsWith('allow') && l.color)!;
   assert.equal(allow.color, 'green');
   assert.match(allow.text, / 10 +19%$/);
-  const denied = lines.find((l) => l.text.trimStart().startsWith('denied'))!;
+  const denied = lines.find((l) => l.text.trimStart().startsWith('denied') && l.color)!;
+  assert.ok(lines.some((l) => l.text.includes('unsure  Claude Code decided')));
   assert.equal(denied.color, 'red');
   assert.ok(!lines.some((l) => l.text.trimStart().startsWith('unreachable')), 'zero unreachable is hidden');
   const avoided = lines[lines.findIndex((l) => l.text === 'Classifier passes avoided') + 2]!;

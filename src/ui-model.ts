@@ -96,12 +96,12 @@ export function statusText(t: Tally, compactions: number): string | undefined {
 export function bashRowText(e: LogEntry): string | undefined {
   if (e.feature === 'file') {
     if (e.action === 'denied') return `✗ jevgate denied · ${e.category ?? e.reason ?? ''}${e.category && e.scores ? ` ${(e.scores[e.category] ?? 0).toFixed(2)}` : ''}`;
-    if (e.action === 'ok') return `▸ jevgate ok · outside project · ${e.scores ? topScores(e.scores) : ''} · ${e.ms ?? '?'}ms`;
+    if (e.action === 'ok') return `▸ jevgate unsure · outside project · ${e.scores ? topScores(e.scores) : ''} · ${e.ms ?? '?'}ms`;
     if (e.action === 'unreachable') return `✗ jevgate unreachable · Jev did not answer · ${e.ms ?? '?'}ms`;
     return undefined;
   }
   if (e.feature !== 'bash') return undefined;
-  if (e.action === 'ok' || e.action === 'allow') return `▸ jevgate ${e.action} · ${e.scores ? topScores(e.scores) : ''} · ${e.ms ?? '?'}ms`;
+  if (e.action === 'ok' || e.action === 'allow') return `▸ jevgate ${e.action === 'ok' ? 'unsure' : 'allow'} · ${e.scores ? topScores(e.scores) : ''} · ${e.ms ?? '?'}ms`;
   if (e.action === 'denied') {
     const score = e.category && e.scores ? ` ${(e.scores[e.category] ?? 0).toFixed(2)}` : '';
     return `✗ jevgate denied · ${e.category ?? e.reason ?? ''}${score}`;

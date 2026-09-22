@@ -72,7 +72,7 @@ For each `Bash` call:
    The category furthest over its threshold denies, with
    `permissionDecisionReason` naming it and the score. When every deny category
    scores under the allow ceiling (`bashAllowMax`, default 0.3) the hook answers
-   `allow`, logged `allow`. Between the two the hook is silent, logged `ok`.
+   `allow`, logged `allow`. Between the two the hook is silent, logged `ok` and shown as `unsure`: Claude Code decides.
    Thresholds are plugin options (`bashDeny*`); 0 means log only.
 4. **Jev unreachable** (timeout, error, malformed answer, no API key): in bypass
    mode → deny with `jevgate: Jev unreachable, refusing to run unguarded. Switch

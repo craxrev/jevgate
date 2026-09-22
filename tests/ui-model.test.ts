@@ -44,7 +44,7 @@ test('footerLabel is the short form; free commands do not show', () => {
 test('bashRowText: ok shows the top two scores, denied the category and score, free nothing', () => {
   const [free, ok, allow, denied, unreachable, legacy] = parseLog(log);
   assert.equal(bashRowText(free!), undefined);
-  assert.equal(bashRowText(ok!), '▸ jevgate ok · reads_secrets 0.13, exceeds_request 0.10 · 340ms');
+  assert.equal(bashRowText(ok!), '▸ jevgate unsure · reads_secrets 0.13, exceeds_request 0.10 · 340ms');
   assert.equal(bashRowText(allow!), '▸ jevgate allow · reads_secrets 0.11, exceeds_request 0.10 · 300ms');
   assert.equal(bashRowText(denied!), '✗ jevgate denied · exfiltrates 0.98');
   assert.match(bashRowText(unreachable!)!, /unreachable.*830ms/);

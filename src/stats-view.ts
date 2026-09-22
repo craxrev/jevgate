@@ -44,9 +44,13 @@ export function statsLines(v: StatsView): Line[] {
   out.push({ text: `This session · ${st} calls`, bold: true });
   row('free', s.free, st, COLORS.free, true);
   row('allow', s.allowed, st, COLORS.allow);
-  row('ok', s.ok - s.allowed, st, COLORS.ok);
+  row('unsure', s.ok - s.allowed, st, COLORS.ok);
   row('denied', s.denied, st, COLORS.denied);
   if (s.unreachable) row('unreachable', s.unreachable, st, COLORS.unreachable);
+  out.push({ text: ' free    read-only, never asked', dim: true });
+  out.push({ text: ' allow   harmless, classifier skipped', dim: true });
+  out.push({ text: ' unsure  Claude Code decided', dim: true });
+  out.push({ text: ' denied  harmful, refused', dim: true });
   out.push({ text: '' });
 
   const judged = s.ok + s.denied + s.unreachable;
@@ -65,7 +69,8 @@ export function statsLines(v: StatsView): Line[] {
   const at = total(a);
   out.push({ text: `All-time · ${at} calls`, bold: true });
   out.push({ text: ` ${bar(a.free, at, barW + 12)} free ${pct(a.free, at)}`, dim: true });
-  out.push({ text: ` allow ${a.allowed} · ok ${a.ok - a.allowed} · denied ${a.denied} · unreachable ${a.unreachable}`, dim: true });
+  out.push({ text: ` allow ${a.allowed} · unsure ${a.ok - a.allowed}`, dim: true });
+  out.push({ text: ` denied ${a.denied} · unreachable ${a.unreachable}`, dim: true });
   out.push({ text: '' });
 
   out.push({ text: a.categories.length ? 'Denied by category · all-time' : 'Nothing denied yet', bold: true });

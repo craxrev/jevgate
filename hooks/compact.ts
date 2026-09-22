@@ -101,10 +101,13 @@ async function refresh($: Host, ui: UiRuntime): Promise<void> {
     const [entries, session] = await Promise.all([readLog($), $.session.id()]);
     const label = footerLabel(tally(entries, session), ui.compactions.length);
     cacheRows(ui, entries);
-    if (label !== ui.footer) {
-      ui.footer = label;
-      $.ui.invalidate('ui.render');
+    let changed = label !== ui.footer;
+    ui.footer = label;
+    if (ui.stats && ui.stats.entries !== entries.length) {
+      ui.stats = { session: bashStats(entries, session), all: bashStats(entries), sessionId: session, entries: entries.length };
+      changed = true;
     }
+    if (changed) $.ui.invalidate('ui.render');
   } catch {
     // the footer is decoration
   }
@@ -210,7 +213,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
   on('command.run', { command: 'jevgate' }, async ($) => {
     const [entries, sessionId] = await Promise.all([readLog($), $.session.id()]);
     ui.stats = { session: bashStats(entries, sessionId), all: bashStats(entries), sessionId, entries: entries.length };
-    const rows = 8 + Math.min(6, ui.stats.all.categories.length);
+    const rows = 16 + Math.min(8, ui.stats.all.categories.length);
     try {
       await $.ui.open({ id: STATS_PANE_ID, title: 'jevgate', closeOnEscape: true, rows });
       $.ui.invalidate('ui.render');
@@ -229,28 +232,31 @@ export const register: Register = (on: On, options: PluginOptions) => {
     if (!s) return next(e);
     const { Box, Text } = $.ui.resolve(e);
     const judged = (x: BashStats) => x.ok + x.denied + x.unreachable;
-    const pct = (n: number, total: number) => (total ? `${Math.round((100 * n) / total)}%` : '-');
-    const row = (label: string, x: BashStats) => {
-      const total = x.free + judged(x);
-      return h(
-        Text,
-        { wrap: 'truncate-end' },
-        `${label.padEnd(9)} ${String(total).padStart(5)} calls   free ${String(x.free).padStart(4)} (${pct(x.free, total).padStart(4)})   ok ${String(x.ok).padStart(4)}   allow ${String(x.allowed).padStart(4)}   denied ${String(x.denied).padStart(3)}   unreachable ${String(x.unreachable).padStart(3)}   avg ${String(x.avgMs).padStart(4)}ms`,
-      );
-    };
-    const cats = s.all.categories.slice(0, 6).map(([c, n]) => h(Text, { dimColor: true }, `  ${c.padEnd(40)} ${String(n).padStart(3)}`));
+    const total = (x: BashStats) => x.free + judged(x);
+    const pct = (n: number, t: number) => (t ? `${Math.round((100 * n) / t)}%` : '');
+    const line = (label: string, a: string, b: string, dim = false) =>
+      h(Text, { dimColor: dim, wrap: 'truncate-end' }, `${label.padEnd(15)}${a.padStart(9)}${b.padStart(11)}`);
+    const num = (f: (x: BashStats) => number, label: string, dim = false) => line(label, String(f(s.session)), String(f(s.all)), dim);
+    const cats = s.all.categories.slice(0, 8).map(([c, n]) => h(Text, { dimColor: true, wrap: 'truncate-end' }, `  ${c.padEnd(30)}${String(n).padStart(4)}`));
     return h(
       Box,
       { flexDirection: 'column', width: e.props.bodyColumns, paddingX: 1 },
-      h(Text, { bold: true }, 'jevgate guard · bash and file tools'),
-      h(Text, { dimColor: true }, 'free = Claude Code read-only set, never asked · ok = judged, ran (allow skipped the classifier) · denied = refused'),
-      h(Text, {}, ''),
-      row('session', s.session),
-      row('all-time', s.all),
+      h(Text, { bold: true }, 'jevgate guard'),
+      line('', 'session', 'all-time', true),
+      num(total, 'calls'),
+      line('free', `${s.session.free} ${pct(s.session.free, total(s.session))}`.trim(), `${s.all.free} ${pct(s.all.free, total(s.all))}`.trim()),
+      num(judged, 'judged'),
+      num((x) => x.ok - x.allowed, '  ok, silent', true),
+      num((x) => x.allowed, '  allow', true),
+      num((x) => x.denied, '  denied', true),
+      num((x) => x.unreachable, '  unreachable', true),
+      line('avg Jev', `${s.session.avgMs}ms`, `${s.all.avgMs}ms`),
       h(Text, {}, ''),
       h(Text, { bold: cats.length > 0 }, cats.length ? 'denied by category, all-time' : 'nothing denied yet'),
       ...cats,
-      h(Text, { dimColor: true }, `done-check ✗${s.session.blocks} · subagent ⇢${s.session.agentDenies} this session · ${s.entries} log entries   (Esc closes)`),
+      h(Text, {}, ''),
+      h(Text, { dimColor: true, wrap: 'truncate-end' }, `done-check ✗${s.session.blocks} · subagent ⇢${s.session.agentDenies} · ${s.entries} log entries`),
+      h(Text, { dimColor: true }, 'free = read-only set, never asked · allow = classifier skipped · Esc closes'),
     );
   });
 

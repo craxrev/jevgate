@@ -1,5 +1,5 @@
 // The free set: commands that run without asking Jev, mirroring the read-only
-// rules of Claude Code 2.1.274 (see docs/plan-bash-guard.md, "Reference").
+// rules of Claude Code 2.1.274 (read-only command list, safe flags, cd+git rule).
 // Anything not listed here is not free. When in doubt this file says no; the
 // cost of a false "free" is an unguarded command in bypass mode.
 import { parseShell, type Segment, type Parsed } from './shell.ts';

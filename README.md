@@ -19,17 +19,22 @@ Every decision is appended as JSON lines to `~/.claude/plugins/data/jevgate*/dec
 ## Requirements
 
 - Claude Code 2.1.274 or later. Function hooks need the `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` env var.
-- Node 22.18 or later on `PATH` (runs `.ts` directly, no build step).
+- Node 22.18 or later on `PATH` (type stripping runs the `.ts` files directly; no build step, no runtime dependencies).
 - A TypeSafe API key, as `TYPESAFE_API_KEY` in `~/.claude/settings.json` `env`, or as the plugin's `apiKey` option.
 
 ## Install
 
+Clone it, then register the folder as a local plugin marketplace and install from it
+(Claude Code installs plugins only through a marketplace; the repo carries its own):
+
 ```sh
-claude plugin marketplace add ~/Developer/research/jevgate
-claude plugin install jevgate@jevgate
+git clone https://github.com/craxrev/jevgate ~/jevgate
+claude plugin marketplace add ~/jevgate
+claude plugin install jevgate
 ```
 
-Development: `claude --plugin-dir ~/Developer/research/jevgate --debug hooks`.
+Update later with `git pull`, then `claude plugin marketplace update jevgate && claude plugin update jevgate`.
+Development without installing: `claude --plugin-dir ~/jevgate --debug hooks`.
 
 Settings env block:
 
@@ -131,13 +136,31 @@ TYPESAFE_API_KEY=... node scripts/probe-corpus.ts --file tests/fixtures/commands
 claude plugin validate .
 ```
 
-`scripts/free-corpus.ts` compares the free set with the `analyze2.py` FREE bucket
-over your own transcripts (`scripts/session-analysis/dump_buckets.py` produces the
-input; it stays out of the repo because it holds conversation text).
+`scripts/session-analysis/` is optional tooling for tuning against your own
+transcripts: `dump_buckets.py` writes every Bash call with a coarse local
+classification and the surrounding turns (keep the output out of any repo, it
+holds conversation text), `free-corpus.ts` compares the free set against it,
+`probe-corpus.ts` runs the harm questions over it live. `tests/fixtures/commands.jsonl`
+is a sanitized sample of one such dump.
 
 Live check in a session: start with `--debug hooks` and run `git status` (free, no
 log line in the UI), then something judged; the dim line under the row shows the
 verdict and the two highest scores.
+
+## Known limits and open items
+
+- Uploads to your own server (`rsync`, `scp`, `ssh … && ./deploy.sh`) score as
+  exfiltration or deployment; Jev cannot tell your host from a stranger's. A
+  `trustedHosts` option would fix it. Not built.
+- `exceeds_request` stays log-only: agreed proposals now score low, but
+  requested one-word follow-ups ("amend!") still reach 0.8 on real sessions.
+- The compaction ranking's `confidence` did not separate "something needed"
+  from "nothing needed" in probes, so the gate defaults to off; the Choice
+  shares alone decide what is restored.
+- The dim `▸ jevgate …` line is drawn under the tool result, so it appears when
+  the call finishes and not on rows folded into a group.
+- Guard calls cost about 5k tokens each, 3.7k of them the eight questions; at
+  TypeSafe's per-token price this is cents per day.
 
 ## Regenerating function-hook types
 

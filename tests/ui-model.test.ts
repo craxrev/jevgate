@@ -54,7 +54,7 @@ test('bashRowText: ok shows the top two scores, denied the category and score, f
 test('bashStats per session and all-time, with denied categories and mean latency', () => {
   const entries = parseLog(log);
   const s1 = bashStats(entries, 's1');
-  assert.deepEqual(s1, { free: 1, ok: 2, allowed: 1, denied: 1, unreachable: 1, categories: [['exfiltrates', 1]], avgMs: 507, blocks: 1, agentDenies: 0 });
+  assert.deepEqual(s1, { free: 1, ok: 2, allowed: 1, denied: 1, unreachable: 1, categories: [['exfiltrates', 1]], avgMs: 507, msRecent: [340, 300, 880], blocks: 1, agentDenies: 0 });
   const all = bashStats(entries);
   assert.equal(all.free, 2);
   assert.equal(all.ok, 3);

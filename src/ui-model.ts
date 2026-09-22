@@ -126,12 +126,14 @@ export type BashStats = {
   categories: [string, number][];
   /** Mean Jev latency over judged commands. */
   avgMs: number;
+  /** Latencies of the newest judged commands, oldest first, at most 40. */
+  msRecent: number[];
   blocks: number;
   agentDenies: number;
 };
 
 export function bashStats(entries: readonly LogEntry[], session?: string): BashStats {
-  const s: BashStats = { free: 0, ok: 0, allowed: 0, denied: 0, unreachable: 0, categories: [], avgMs: 0, blocks: 0, agentDenies: 0 };
+  const s: BashStats = { free: 0, ok: 0, allowed: 0, denied: 0, unreachable: 0, categories: [], avgMs: 0, msRecent: [], blocks: 0, agentDenies: 0 };
   const cats = new Map<string, number>();
   let msSum = 0;
   let msN = 0;
@@ -153,6 +155,8 @@ export function bashStats(entries: readonly LogEntry[], session?: string): BashS
     if (typeof e.ms === 'number' && (BASH_OK.has(e.action) || e.action === 'denied')) {
       msSum += e.ms;
       msN++;
+      s.msRecent.push(e.ms);
+      if (s.msRecent.length > 40) s.msRecent.shift();
     }
   }
   s.categories = [...cats].sort((a, b) => b[1] - a[1]);

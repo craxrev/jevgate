@@ -23,6 +23,7 @@ import {
   pickRestore,
   type Msg,
 } from '../src/compact-core.ts';
+import { statsLines } from '../src/stats-view.ts';
 import {
   tally,
   footerLabel,
@@ -213,7 +214,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
   on('command.run', { command: 'jevgate' }, async ($) => {
     const [entries, sessionId] = await Promise.all([readLog($), $.session.id()]);
     ui.stats = { session: bashStats(entries, sessionId), all: bashStats(entries), sessionId, entries: entries.length };
-    const rows = 22 + Math.min(8, ui.stats.all.categories.length);
+    const rows = 24 + Math.min(8, ui.stats.all.categories.length);
     try {
       await $.ui.open({ id: STATS_PANE_ID, title: 'jevgate', closeOnEscape: true, rows });
       $.ui.invalidate('ui.render');
@@ -231,38 +232,11 @@ export const register: Register = (on: On, options: PluginOptions) => {
     const s = ui.stats;
     if (!s) return next(e);
     const { Box, Text } = $.ui.resolve(e);
-    const judged = (x: BashStats) => x.ok + x.denied + x.unreachable;
-    const total = (x: BashStats) => x.free + judged(x);
-    const pct = (n: number, t: number) => (t ? `${Math.round((100 * n) / t)}%` : '');
-    const line = (label: string, a: string, b: string, dim = false) =>
-      h(Text, { dimColor: dim, wrap: 'truncate-end' }, `${label.padEnd(15)}${a.padStart(9)}${b.padStart(11)}`);
-    const num = (f: (x: BashStats) => number, label: string, dim = false) => line(label, String(f(s.session)), String(f(s.all)), dim);
-    const cats = s.all.categories.slice(0, 8).map(([c, n]) => h(Text, { dimColor: true, wrap: 'truncate-end' }, `  ${c.padEnd(30)}${String(n).padStart(4)}`));
+    const lines = statsLines({ session: s.session, all: s.all, width: e.props.bodyColumns - 2, entries: s.entries });
     return h(
       Box,
       { flexDirection: 'column', width: e.props.bodyColumns, paddingX: 1 },
-      h(Text, { bold: true }, 'jevgate guard'),
-      line('', 'session', 'all-time', true),
-      num(total, 'calls'),
-      line('free', `${s.session.free} ${pct(s.session.free, total(s.session))}`.trim(), `${s.all.free} ${pct(s.all.free, total(s.all))}`.trim()),
-      num(judged, 'judged'),
-      num((x) => x.ok - x.allowed, '  ok, silent', true),
-      num((x) => x.allowed, '  allow', true),
-      num((x) => x.denied, '  denied', true),
-      num((x) => x.unreachable, '  unreachable', true),
-      line('avg Jev', `${s.session.avgMs}ms`, `${s.all.avgMs}ms`),
-      h(Text, {}, ''),
-      h(Text, { bold: cats.length > 0 }, cats.length ? 'denied by category, all-time' : 'nothing denied yet'),
-      ...cats,
-      h(Text, {}, ''),
-      line('done-check ✗', String(s.session.blocks), String(s.all.blocks), true),
-      line('subagent ⇢', String(s.session.agentDenies), String(s.all.agentDenies), true),
-      h(Text, {}, ''),
-      h(Text, { dimColor: true }, 'free      read-only set, never asked'),
-      h(Text, { dimColor: true }, 'allow     judged harmless, classifier skipped'),
-      h(Text, { dimColor: true }, 'ok        judged, Claude Code decided'),
-      h(Text, { dimColor: true }, 'denied    refused, category named'),
-      h(Text, { dimColor: true }, `${s.entries} log entries · Esc closes`),
+      ...lines.map((l) => h(Text, { color: l.color, dimColor: l.dim, bold: l.bold, wrap: 'truncate-end' }, l.text || ' ')),
     );
   });
 

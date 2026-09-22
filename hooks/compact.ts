@@ -49,22 +49,34 @@ export const register: Register = (on: On, options: PluginOptions) => {
   on('session.compact', async ($, e, next) => {
     if (!cfg.compactEnabled) return next(e);
     const t0 = Date.now();
+
+    // Near the ceiling (engine's own auto-compact, or its precompute for it) a
+    // lossy summary beats hitting the wall. Anywhere else there is room, so when
+    // nothing can be trimmed the conversation simply stays as it is.
+    const nearCeiling = e.trigger === 'auto' || e.trigger === 'precompute';
+    const bail = (why: string) => {
+      if (nearCeiling) {
+        $.ui.toast(`jevgate: built-in summary (${why})`, { timeoutMs: 8000 });
+        return next(e);
+      }
+      $.ui.toast(`jevgate: ${why}, conversation kept as is`, { timeoutMs: 8000 });
+      return { skip: `jevgate: ${why}` };
+    };
+
     try {
       const messages = e.messages as readonly Msg[];
       const cands = candidates(messages, {
         preserveRecent: cfg.compactPreserveRecent,
         headChars: cfg.compactTruncateHeadChars,
       });
-      if (cands.length === 0) {
-        $.ui.log('jevgate compact: nothing to truncate, built-in summary');
-        return next(e);
-      }
+      if (cands.length === 0) return bail('nothing to truncate');
 
       const truncate = new Set(cands.map((c) => c.id));
       let restored = 0;
       if (cfg.compactUseJev) {
-        const apiKey = await resolveApiKey($, cfg);
-        if (apiKey) {
+        try {
+          const apiKey = await resolveApiKey($, cfg);
+          if (!apiKey) throw new Error('no TYPESAFE_API_KEY');
           const state = buildRankState(messages, cands, cfg.compactTruncateHeadChars);
           const res = await ask(hostFetch($), { apiKey, model: cfg.model }, state, rankQuestions(cands));
           const scores = new Map<string, number>();
@@ -76,23 +88,20 @@ export const register: Register = (on: On, options: PluginOptions) => {
             'jevgate compact scores: ' +
               cands.map((c) => `${c.tool}:${(scores.get(c.id) ?? 0).toFixed(2)}${keep.has(c.id) ? '*' : ''}`).join(' '),
           );
-        } else {
-          $.ui.log('jevgate compact: no TYPESAFE_API_KEY, deterministic truncation only');
+        } catch (err) {
+          // Jev is optional here: without it every candidate is truncated.
+          $.ui.log(`jevgate compact: Jev ranking skipped (${err instanceof Error ? err.message : String(err)})`);
         }
       }
 
       const out = apply(messages, truncate, cfg.compactTruncateHeadChars);
       const ratio = reductionRatio(messages, out);
       const summary = `${truncate.size} truncated, ${restored} restored, ${Math.round(ratio * 100)}% smaller, ${Date.now() - t0}ms`;
-      if (ratio < cfg.compactMinReductionRatio) {
-        $.ui.toast(`jevgate: built-in summary (only ${summary})`, { timeoutMs: 8000 });
-        return next(e);
-      }
+      if (ratio < cfg.compactMinReductionRatio) return bail(`only ${summary}`);
       $.ui.toast(`jevgate: kept all ${out.length} messages, no summary (${summary})`, { timeoutMs: 8000 });
       return { messages: toSession(e.messages, out) };
     } catch (err) {
-      $.ui.toast(`jevgate: built-in summary (${err instanceof Error ? err.message : String(err)})`, { timeoutMs: 8000 });
-      return next(e);
+      return bail(err instanceof Error ? err.message : String(err));
     }
   });
 

@@ -4,7 +4,7 @@
 //    long tool outputs truncated. Text is never rewritten, calls are never
 //    dropped. Jev only ranks which truncated outputs to restore verbatim.
 // 2. turn.complete: request compaction early, refresh the status line.
-// 3. ui.render: a dim line under each Bash row Jev judged, and a pane
+// 3. ui.render: a dim line under each judged Bash or file-tool result, and a pane
 //    reporting a compaction.
 // 4. /jevgate: a registered slash command that opens a stats pane, no model
 //    turn and no shell involved.
@@ -271,7 +271,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
   });
 
   for (const tool of ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read']) {
-    on('ui.render', { component: 'ToolUse', props: { tool } }, async ($, e, next) => {
+    on('ui.render', { component: 'ToolResult', props: { tool } }, async ($, e, next) => {
     const engineRow = await next(e);
     try {
       if (!rowCache.has(e.requestId)) {

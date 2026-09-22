@@ -10,6 +10,7 @@ type Input = {
   session_id?: string;
   cwd?: string;
   tool_name?: string;
+  tool_use_id?: string;
   tool_input?: { command?: string; description?: string };
 };
 
@@ -23,7 +24,7 @@ async function main(): Promise<void> {
   if (typeof command !== 'string' || !command.trim()) return;
 
   if (isPassthrough(command)) {
-    appendLog(logPath, { feature: 'bash', action: 'passthrough', session: input.session_id, command });
+    appendLog(logPath, { feature: 'bash', action: 'passthrough', session: input.session_id, tool_use_id: input.tool_use_id, command });
     return;
   }
 
@@ -39,6 +40,7 @@ async function main(): Promise<void> {
     feature: 'bash',
     action: d.action,
     session: input.session_id,
+    tool_use_id: input.tool_use_id,
     command,
     scores: d.scores,
     ms: Date.now() - t0,

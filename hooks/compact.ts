@@ -1,6 +1,14 @@
-// Function hook (early access): replace the compaction summary with the same
-// messages, long tool outputs truncated. Text is never rewritten, calls are
-// never dropped. Jev only ranks which truncated outputs to restore verbatim.
+// jevgate function-hook module (early access).
+//
+// 1. session.compact: replace the compaction summary with the same messages,
+//    long tool outputs truncated. Text is never rewritten, calls are never
+//    dropped. Jev only ranks which truncated outputs to restore verbatim.
+// 2. turn.complete: request compaction early, refresh the status line.
+// 3. ui.render: a dim line under each Bash row Jev judged, and a pane
+//    reporting a compaction.
+//
+// Everything UI is best-effort and must never break the hooks it decorates.
+// The validator follows `$` only within this file, so all of it lives here.
 import type { On, PluginOptions, Register, SessionMessage } from 'claude-code';
 import { fromRaw, type Config } from '../src/config.ts';
 import { ask, noul, type FetchLike } from '../src/jev.ts';
@@ -13,8 +21,21 @@ import {
   pickRestore,
   type Msg,
 } from '../src/compact-core.ts';
+import {
+  tally,
+  statusText,
+  bashRowText,
+  parseLog,
+  kb,
+  type LogEntry,
+  type CompactionRow,
+  type CompactionReport,
+} from '../src/ui-model.ts';
 
 type Host = Parameters<Parameters<On>[1]>[0];
+
+const PANE_ID = 'jevgate-compaction';
+const MAX_LOG_CHARS = 512 * 1024;
 
 async function resolveApiKey($: Host, cfg: Config): Promise<string | undefined> {
   if (cfg.apiKey) return cfg.apiKey;
@@ -42,9 +63,30 @@ function toSession(input: readonly SessionMessage[], output: readonly Msg[]): Se
   return output.map((m) => (own.has(m) ? (m as SessionMessage) : (m as SessionMessage)));
 }
 
+/** The newest entries of the decisions log, oldest first. Missing log = empty. */
+async function readLog($: Host): Promise<LogEntry[]> {
+  const home = (await $.env.get('HOME')) ?? '';
+  for (const p of [
+    `${home}/.claude/plugins/data/jevgate-jevgate/decisions.jsonl`,
+    `${home}/.claude/jevgate/decisions.jsonl`,
+  ]) {
+    if (!(await $.fs.exists(p))) continue;
+    let text = await $.fs.read(p);
+    if (text.length > MAX_LOG_CHARS) text = text.slice(text.length - MAX_LOG_CHARS);
+    return parseLog(text);
+  }
+  return [];
+}
+
 export const register: Register = (on: On, options: PluginOptions) => {
   const cfg = fromRaw(options as Record<string, string | number | boolean | readonly string[]>);
   let compacting = false;
+  const compactions: CompactionReport[] = [];
+  const rowCache = new Map<string, string | undefined>();
+
+  const cacheRows = (entries: readonly LogEntry[]) => {
+    for (const en of entries) if (en.tool_use_id) rowCache.set(en.tool_use_id, bashRowText(en));
+  };
 
   on('session.compact', async ($, e, next) => {
     if (!cfg.compactEnabled) return next(e);
@@ -72,6 +114,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
       if (cands.length === 0) return bail('nothing to truncate');
 
       const truncate = new Set(cands.map((c) => c.id));
+      const scores = new Map<string, number>();
       let restored = 0;
       if (cfg.compactUseJev) {
         try {
@@ -79,7 +122,6 @@ export const register: Register = (on: On, options: PluginOptions) => {
           if (!apiKey) throw new Error('no TYPESAFE_API_KEY');
           const state = buildRankState(messages, cands, cfg.compactTruncateHeadChars);
           const res = await ask(hostFetch($), { apiKey, model: cfg.model }, state, rankQuestions(cands));
-          const scores = new Map<string, number>();
           for (const c of cands) scores.set(c.id, noul(res, `keep_${c.id}`));
           const keep = pickRestore(scores, cfg.compactRestoreTopK, cfg.compactRestoreMinScore);
           for (const id of keep) truncate.delete(id);
@@ -96,9 +138,31 @@ export const register: Register = (on: On, options: PluginOptions) => {
 
       const out = apply(messages, truncate, cfg.compactTruncateHeadChars);
       const ratio = reductionRatio(messages, out);
-      const summary = `${truncate.size} truncated, ${restored} restored, ${Math.round(ratio * 100)}% smaller, ${Date.now() - t0}ms`;
+      const ms = Date.now() - t0;
+      const summary = `${truncate.size} truncated, ${restored} restored, ${Math.round(ratio * 100)}% smaller, ${ms}ms`;
       if (ratio < cfg.compactMinReductionRatio) return bail(`only ${summary}`);
       $.ui.toast(`jevgate: kept all ${out.length} messages, no summary (${summary})`, { timeoutMs: 8000 });
+
+      const rows: CompactionRow[] = cands.map((c) => {
+        const isTruncated = truncate.has(c.id);
+        const input = JSON.stringify(c.input);
+        return {
+          tool: c.tool,
+          input: input.length > 60 ? input.slice(0, 60) + '…' : input,
+          chars: c.chars,
+          kept: isTruncated ? cfg.compactTruncateHeadChars : c.chars,
+          score: scores.get(c.id),
+          restored: !isTruncated,
+        };
+      });
+      compactions.push({ at: new Date().toISOString(), trigger: e.trigger, rows, ratio, ms, messages: out.length });
+      if (compactions.length > 10) compactions.shift();
+      try {
+        await $.ui.open({ id: PANE_ID, title: 'jevgate compaction', closeOnEscape: true, rows: Math.min(20, rows.length + 3) });
+        $.ui.invalidate('ui.render');
+      } catch {
+        // pane is decoration
+      }
       return { messages: toSession(e.messages, out) };
     } catch (err) {
       return bail(err instanceof Error ? err.message : String(err));
@@ -106,6 +170,13 @@ export const register: Register = (on: On, options: PluginOptions) => {
   });
 
   on('turn.complete', async ($, e, next) => {
+    try {
+      const [entries, session] = await Promise.all([readLog($), $.session.id()]);
+      $.ui.status(statusText(tally(entries, session), compactions.length));
+      cacheRows(entries);
+    } catch {
+      // status is decoration
+    }
     if (!cfg.compactEnabled || compacting) return next(e);
     try {
       const { context } = await $.session.usage();
@@ -119,5 +190,49 @@ export const register: Register = (on: On, options: PluginOptions) => {
       compacting = false;
     }
     return next(e);
+  });
+
+  on('ui.render', { component: 'ToolUse', props: { tool: 'Bash' } }, async ($, e, next) => {
+    const engineRow = await next(e);
+    try {
+      if (!rowCache.has(e.requestId)) {
+        cacheRows(await readLog($));
+        if (!rowCache.has(e.requestId)) rowCache.set(e.requestId, undefined);
+      }
+      const line = rowCache.get(e.requestId);
+      if (!line) return engineRow;
+      const { Box, Text } = $.ui.resolve(e);
+      return h(Box, { flexDirection: 'column' }, engineRow, h(Text, { dimColor: true, wrap: 'truncate' }, `  ${line}`));
+    } catch {
+      return engineRow;
+    }
+  });
+
+  on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => {
+    const report = compactions[compactions.length - 1];
+    if (!report) return next(e);
+    const { Box, Text } = $.ui.resolve(e);
+    const truncated = report.rows.filter((r) => !r.restored).length;
+    const restored = report.rows.length - truncated;
+    const rows = report.rows.map((r) =>
+      h(
+        Text,
+        { dimColor: !r.restored, wrap: 'truncate' },
+        `${r.restored ? '★' : '·'} ${r.tool.padEnd(10)} ${kb(r.chars).padStart(6)} → ${kb(r.kept).padStart(5)}  ${
+          r.score === undefined ? '         ' : `keep ${r.score.toFixed(2)}`
+        }  ${r.input}`,
+      ),
+    );
+    return h(
+      Box,
+      { flexDirection: 'column', width: e.props.bodyColumns, paddingX: 1 },
+      h(
+        Text,
+        { bold: true },
+        `jevgate compaction (${report.trigger}) · ${truncated} truncated, ${restored} restored · ${Math.round(report.ratio * 100)}% smaller · ${report.ms}ms · ${report.messages} messages kept`,
+      ),
+      h(Text, { dimColor: true }, '★ restored verbatim by Jev   · truncated to head + note   (Esc closes)'),
+      ...rows,
+    );
   });
 };

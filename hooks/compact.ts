@@ -213,7 +213,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
   on('command.run', { command: 'jevgate' }, async ($) => {
     const [entries, sessionId] = await Promise.all([readLog($), $.session.id()]);
     ui.stats = { session: bashStats(entries, sessionId), all: bashStats(entries), sessionId, entries: entries.length };
-    const rows = 16 + Math.min(8, ui.stats.all.categories.length);
+    const rows = 22 + Math.min(8, ui.stats.all.categories.length);
     try {
       await $.ui.open({ id: STATS_PANE_ID, title: 'jevgate', closeOnEscape: true, rows });
       $.ui.invalidate('ui.render');
@@ -255,8 +255,14 @@ export const register: Register = (on: On, options: PluginOptions) => {
       h(Text, { bold: cats.length > 0 }, cats.length ? 'denied by category, all-time' : 'nothing denied yet'),
       ...cats,
       h(Text, {}, ''),
-      h(Text, { dimColor: true, wrap: 'truncate-end' }, `done-check ✗${s.session.blocks} · subagent ⇢${s.session.agentDenies} · ${s.entries} log entries`),
-      h(Text, { dimColor: true }, 'free = read-only set, never asked · allow = classifier skipped · Esc closes'),
+      line('done-check ✗', String(s.session.blocks), String(s.all.blocks), true),
+      line('subagent ⇢', String(s.session.agentDenies), String(s.all.agentDenies), true),
+      h(Text, {}, ''),
+      h(Text, { dimColor: true }, 'free      read-only set, never asked'),
+      h(Text, { dimColor: true }, 'allow     judged harmless, classifier skipped'),
+      h(Text, { dimColor: true }, 'ok        judged, Claude Code decided'),
+      h(Text, { dimColor: true }, 'denied    refused, category named'),
+      h(Text, { dimColor: true }, `${s.entries} log entries · Esc closes`),
     );
   });
 

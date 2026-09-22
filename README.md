@@ -11,7 +11,7 @@ feature depends on another.
 | File guard | `PreToolUse` on `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Read` | Writes inside the repo or scratchpad are free. A write outside gets one Jev call: does it change shell, git, ssh, Claude or system configuration, or another project. A read of a credential path (`.env`, `~/.ssh`, `*.pem`, …) is refused with no model call. | on |
 | Done-check | `Stop` | Before Claude hands back, checks that the diff covers the request and the final message does not overclaim. Blocks with the reason, at most 2 times per turn. | on |
 | Subagent gate | `PreToolUse` on `Agent` | Denies a subagent spawn when the answer is already in the recent conversation. | on |
-| Verbatim compaction | `session.compact` function hook (early access) | Replaces the compaction summary with the original messages, long tool outputs truncated. Never rewrites text, never drops a call. Jev ranks which outputs to restore verbatim. Triggers at 60% context. | on |
+| Verbatim compaction | `session.compact` function hook (early access) | Replaces the compaction summary with the original messages, long tool outputs truncated. Never rewrites text, never drops a call. One Jev call ranks which outputs to restore verbatim: a Choice over the candidates plus a yes/no gate. Triggers at 60% context. | on |
 
 Every decision is appended as JSON lines to `~/.claude/plugins/data/jevgate*/decisions.jsonl`
 (or `~/.claude/jevgate/decisions.jsonl` when run from `--plugin-dir`). `/jevgate` opens a panel with the tally.

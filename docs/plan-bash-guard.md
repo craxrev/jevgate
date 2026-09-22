@@ -193,11 +193,14 @@ in-place file rewrites with a clean git status.
 
 Everything below is decided but not built, or built and awaiting a look.
 
-1. Compaction candidate cap: rank only the ~150 largest tool outputs, largest
-   first, so a big session never exceeds Jev's 32k-token `state` limit (64k per
-   request incl. questions). Above the cap: truncate without asking. Add after
-   reading the next `compact` entry in `decisions.jsonl` (0.3.8 logs
-   `jev_body_chars`, `jev_ms`, `jev_scores`, `jev_usage`, `restored`, `ratio`).
+1. Done in 0.3.9: ranking is one Choice over the candidate ids (probabilities
+   are the ranking) plus an `any_needed` noul gate (Choice mass always lands
+   somewhere), capped at the 250 largest candidates. Two bugs fixed on the way:
+   the goal was the last 3 user messages including `/compact` and command
+   echoes, so Jev ranked against "/compact"; and 75 nouls cost 34k chars of
+   questions for no ranking. Replay of this session's compaction: gate 0.69,
+   artifact design guidance 0.36, plan doc 0.10, none 0.15. Remaining cost is
+   the heads (46k chars for 75); a shorter ranking head would halve it.
 2. Row line placement: 0.3.7 moved the dim `▸ jevgate …` line from the ToolUse
    row to the ToolResult block so it sits under the classifier verdict. Not yet
    confirmed on screen. Downsides: appears only when the call finishes; folded

@@ -20,6 +20,8 @@ import {
   reductionRatio,
   buildRankState,
   rankQuestions,
+  rankScores,
+  rankable,
   pickRestore,
   type Msg,
 } from '../src/compact-core.ts';
@@ -171,15 +173,21 @@ export const register: Register = (on: On, options: PluginOptions) => {
         try {
           const apiKey = await resolveApiKey($, cfg);
           if (!apiKey) throw new Error('no TYPESAFE_API_KEY');
-          const state = buildRankState(messages, cands, cfg.compactTruncateHeadChars);
-          const questions = rankQuestions(cands);
+          const ranked = rankable(cands);
+          const state = buildRankState(messages, ranked, cfg.compactTruncateHeadChars);
+          const questions = rankQuestions(ranked);
           rank.jev_body_chars = JSON.stringify({ state, questions }).length;
+          rank.ranked = ranked.length;
           const tJev = Date.now();
           const res = await ask(hostFetch($), { apiKey, model: cfg.model }, state, questions);
           rank.jev_ms = Date.now() - tJev;
-          for (const c of cands) scores.set(c.id, noul(res, `keep_${c.id}`));
+          for (const [id, s] of rankScores(res, ranked, cfg.compactRestoreGateMin)) scores.set(id, s);
+          const gate = noul(res, 'any_needed');
+          const choice = res.answers.most_needed;
           const vals = [...scores.values()].sort((a, b) => b - a);
-          rank.jev_scores = { n: vals.length, max: vals[0] ?? 0, mean: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0, top5: vals.slice(0, 5) };
+          rank.jev_gate = gate;
+          rank.jev_choice = choice && choice.type === 'choice' ? { choice: choice.choice, confidence: choice.confidence, none: choice.probabilities.none ?? 0 } : undefined;
+          rank.jev_scores = { n: vals.length, max: vals[0] ?? 0, top5: vals.slice(0, 5) };
           rank.jev_usage = res.usage;
           const keep = pickRestore(scores, cfg.compactRestoreTopK, cfg.compactRestoreMinScore);
           for (const id of keep) truncate.delete(id);

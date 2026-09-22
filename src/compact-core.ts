@@ -1,4 +1,5 @@
-import type { Questions } from './jev.ts';
+import type { Questions, JevResponse } from './jev.ts';
+import { noul } from './jev.ts';
 
 /** Structural subset of Claude Code's SessionMessage. */
 export type ToolUse = {
@@ -41,6 +42,13 @@ function pinnedIndexes(messages: readonly Msg[], preserveRecent: number): Set<nu
 }
 
 /** Tool results eligible for truncation: unpinned, not an edit, long enough to matter. */
+/** The candidates worth asking Jev about: the largest `max`, in original order. */
+export function rankable(cands: readonly Candidate[], max = MAX_RANKED): Candidate[] {
+  if (cands.length <= max) return [...cands];
+  const keep = new Set([...cands].sort((a, b) => b.chars - a.chars).slice(0, max).map((c) => c.id));
+  return cands.filter((c) => keep.has(c.id));
+}
+
 export function candidates(messages: readonly Msg[], opts: CoreOptions): Candidate[] {
   const pinned = pinnedIndexes(messages, opts.preserveRecent);
   const uses = new Map<string, ToolUse>();
@@ -118,12 +126,20 @@ function shortInput(input: Record<string, unknown>, max = 200): string {
   return s.length > max ? s.slice(0, max) + '…' : s;
 }
 
+/** Slash-command echoes, their caveats and reminders are not the user's goal. */
+const NOT_A_GOAL = /^\s*(<(local-command|command-name|command-message|system-reminder|bash-input|task-notification)|\/[a-z][\w:-]*\s*$)/i;
+
+/** The user's last three real messages, oldest first: what the ranking is judged against. */
+export function goalMessages(messages: readonly Msg[], n = 3): string[] {
+  return messages
+    .filter((m) => m.role === 'user' && m.text.trim() && !(m.toolResults?.length) && !NOT_A_GOAL.test(m.text))
+    .slice(-n)
+    .map((m) => (m.text.length > 1500 ? m.text.slice(0, 1500) + '…' : m.text));
+}
+
 /** What Jev sees: the goal and one line plus a head snippet per candidate. Never full outputs. */
 export function buildRankState(messages: readonly Msg[], cands: readonly Candidate[], headChars: number): RankState {
-  const goal = messages
-    .filter((m) => m.role === 'user' && m.text.trim() && !(m.toolResults?.length))
-    .slice(-3)
-    .map((m) => (m.text.length > 1500 ? m.text.slice(0, 1500) + '…' : m.text));
+  const goal = goalMessages(messages);
   return {
     goal,
     calls: cands.map((c) => ({
@@ -136,21 +152,50 @@ export function buildRankState(messages: readonly Msg[], cands: readonly Candida
   };
 }
 
+/** Jev allows at most 255 options in a Choice; the rest are truncated without asking. */
+export const MAX_RANKED = 250;
+export const NONE_OPTION = 'none';
+
+/**
+ * Two questions instead of one per candidate: a Choice over the candidate ids
+ * (its probabilities are the ranking) and a noul gate, because Choice mass
+ * always lands somewhere even when nothing is needed.
+ */
 export function rankQuestions(cands: readonly Candidate[]): Questions {
-  const q: Questions = {};
+  const criteria: Record<string, string | null> = { [NONE_OPTION]: 'No old output is still needed word for word; the head snippets are enough or re-running is fine.' };
   cands.forEach((c, i) => {
-    q[`keep_${c.id}`] = {
+    criteria[c.id] = `calls[${i}] (${c.tool})`;
+  });
+  return {
+    any_needed: {
       type: 'noul',
       instructions:
-        `To finish \`goal\`, the assistant will still need the FULL output of \`calls[${i}]\` (${c.tool}) word for word. ` +
-        'The head snippet already shown is not enough, and re-running the tool later is not an acceptable substitute.',
+        'To finish `goal`, the assistant will still need the FULL output of at least one of `calls` word for word. ' +
+        'Each entry shows the tool, its input and the first characters of its output (`head`). ' +
+        'The head alone is not enough for that call, and re-running the tool later is not an acceptable substitute.',
       criteria: {
-        true: 'Exact content beyond the head is still load-bearing for the ongoing task.',
-        false: 'The head is enough, the content is stale, or re-running is fine.',
+        true: 'Some call\'s exact content beyond its head is still load-bearing for the ongoing task.',
+        false: 'Every head is enough, the outputs are stale, or re-running is fine.',
       },
-    };
-  });
-  return q;
+    },
+    most_needed: {
+      type: 'choice',
+      instructions:
+        'Which entry of `calls` is the assistant most likely to still need in FULL, word for word, to finish `goal`? ' +
+        'Options are the call ids; `none` when no full output is needed.',
+      criteria,
+    },
+  };
+}
+
+/** Per-candidate keep scores from the Choice probabilities, gated by the noul: nothing scores when the gate is under `gateMin`. */
+export function rankScores(res: JevResponse, cands: readonly Candidate[], gateMin: number): Map<string, number> {
+  const scores = new Map<string, number>();
+  const gate = noul(res, 'any_needed');
+  const a = res.answers.most_needed;
+  const probs = a && a.type === 'choice' ? a.probabilities : {};
+  for (const c of cands) scores.set(c.id, gate < gateMin ? 0 : (probs[c.id] ?? 0));
+  return scores;
 }
 
 /** Highest-scoring candidates to keep verbatim, capped at topK and floored at minScore. */

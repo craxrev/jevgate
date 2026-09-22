@@ -78,16 +78,38 @@ async function readLog($: Host): Promise<LogEntry[]> {
   return [];
 }
 
+/** Mutable UI state for one load of the module. */
+type UiRuntime = {
+  compactions: CompactionReport[];
+  rowCache: Map<string, string | undefined>;
+  footer: string | undefined;
+};
+
+function cacheRows(ui: UiRuntime, entries: readonly LogEntry[]): void {
+  for (const en of entries) if (en.tool_use_id) ui.rowCache.set(en.tool_use_id, bashRowText(en));
+}
+
+/** Re-read the decisions log; redraw the footer when the tally moved. Decoration: never throws. */
+async function refresh($: Host, ui: UiRuntime): Promise<void> {
+  try {
+    const [entries, session] = await Promise.all([readLog($), $.session.id()]);
+    const label = footerLabel(tally(entries, session), ui.compactions.length);
+    cacheRows(ui, entries);
+    if (label !== ui.footer) {
+      ui.footer = label;
+      $.ui.invalidate('ui.render');
+    }
+  } catch {
+    // the footer is decoration
+  }
+}
+
 export const register: Register = (on: On, options: PluginOptions) => {
   const cfg = fromRaw(options as Record<string, string | number | boolean | readonly string[]>);
   let compacting = false;
-  const compactions: CompactionReport[] = [];
-  const rowCache = new Map<string, string | undefined>();
-  let footer: string | undefined;
-
-  const cacheRows = (entries: readonly LogEntry[]) => {
-    for (const en of entries) if (en.tool_use_id) rowCache.set(en.tool_use_id, bashRowText(en));
-  };
+  const ui: UiRuntime = { compactions: [], rowCache: new Map(), footer: undefined };
+  const compactions = ui.compactions;
+  const rowCache = ui.rowCache;
 
   on('session.compact', async ($, e, next) => {
     if (!cfg.compactEnabled) return next(e);
@@ -170,18 +192,15 @@ export const register: Register = (on: On, options: PluginOptions) => {
     }
   });
 
+  // After each Bash call settles, the gate's log entry exists: tick the footer now, not at turn end.
+  on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
+    const result = await next(e);
+    await refresh($, ui);
+    return result;
+  });
+
   on('turn.complete', async ($, e, next) => {
-    try {
-      const [entries, session] = await Promise.all([readLog($), $.session.id()]);
-      const label = footerLabel(tally(entries, session), compactions.length);
-      cacheRows(entries);
-      if (label !== footer) {
-        footer = label;
-        $.ui.invalidate('ui.render');
-      }
-    } catch {
-      // the footer is decoration
-    }
+    await refresh($, ui);
     if (!cfg.compactEnabled || compacting) return next(e);
     try {
       const { context } = await $.session.usage();
@@ -199,15 +218,15 @@ export const register: Register = (on: On, options: PluginOptions) => {
 
   // The dim mode labels at the right of the prompt footer: add ours as one more label.
   on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
-    if (!footer) return next(e);
-    return next({ ...e, props: { ...e.props, modes: [...e.props.modes, footer] } });
+    if (!ui.footer) return next(e);
+    return next({ ...e, props: { ...e.props, modes: [...e.props.modes, ui.footer] } });
   });
 
   on('ui.render', { component: 'ToolUse', props: { tool: 'Bash' } }, async ($, e, next) => {
     const engineRow = await next(e);
     try {
       if (!rowCache.has(e.requestId)) {
-        cacheRows(await readLog($));
+        cacheRows(ui, await readLog($));
         if (!rowCache.has(e.requestId)) rowCache.set(e.requestId, undefined);
       }
       const line = rowCache.get(e.requestId);

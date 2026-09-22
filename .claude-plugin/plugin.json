@@ -163,6 +163,18 @@
       "description": "How many of the highest-scoring truncated outputs Jev may restore verbatim.",
       "default": 5
     },
+    "compactRestoreMinScore": {
+      "type": "number",
+      "title": "Compaction: restore share",
+      "description": "Share of Jev's Choice probability an old tool output needs to be restored in full. Probabilities sum to 1 across all candidates plus 'none'.",
+      "default": 0.1
+    },
+    "compactRestoreMinConfidence": {
+      "type": "number",
+      "title": "Compaction: restore confidence",
+      "description": "Jev's confidence in its ranking. Below this nothing is restored. 0 (default) disables the gate: confidence did not separate needed from stale in probes.",
+      "default": 0
+    },
     "compactMinReductionRatio": {
       "type": "number",
       "title": "Compaction: minimum reduction",

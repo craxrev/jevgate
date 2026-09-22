@@ -12,7 +12,13 @@ export type ChoiceQuestion = {
   instructions: string;
   criteria: Record<string, string | null>;
 };
-export type Question = NoulQuestion | ChoiceQuestion;
+export type ScoreQuestion = {
+  type: 'score';
+  instructions: string;
+  /** Level descriptions, lowest first; 2 to 10 of them. */
+  criteria: string[];
+};
+export type Question = NoulQuestion | ChoiceQuestion | ScoreQuestion;
 export type Questions = Record<string, Question>;
 
 export type NoulAnswer = { type: 'noul'; noul: number };
@@ -22,7 +28,15 @@ export type ChoiceAnswer = {
   probabilities: Record<string, number>;
   confidence: number;
 };
-export type Answer = NoulAnswer | ChoiceAnswer;
+export type ScoreAnswer = {
+  type: 'score';
+  /** Probability-weighted position, 0-based, may fall between levels. */
+  score: number;
+  legend: Record<string, string>;
+  probabilities: Record<string, number>;
+  confidence: number;
+};
+export type Answer = NoulAnswer | ChoiceAnswer | ScoreAnswer;
 export type JevResponse = {
   model: string;
   answers: Record<string, Answer>;
@@ -106,4 +120,11 @@ export function nodeFetch(timeoutMs: number): FetchLike {
 /** Character-based token estimate, deliberately pessimistic. */
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3.5);
+}
+
+/** The score answer's position, or throws when the answer is missing or not a score. */
+export function score(res: JevResponse, name: string): number {
+  const a = res.answers[name];
+  if (!a || a.type !== 'score' || typeof a.score !== 'number') throw new Error(`Jev answer ${name} missing or not a score`);
+  return a.score;
 }

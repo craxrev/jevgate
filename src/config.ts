@@ -43,7 +43,7 @@ export type Config = {
   compactRestoreTopK: number;
   /** Share of the Choice mass a candidate needs to be restored. */
   compactRestoreMinScore: number;
-  /** Jev's Choice confidence must reach this before anything is restored. */
+  /** Jev's Choice confidence must reach this before anything is restored; 0 disables the gate. */
   compactRestoreMinConfidence: number;
   compactMinReductionRatio: number;
 };
@@ -86,7 +86,7 @@ export const DEFAULTS: Config = {
   compactTruncateHeadChars: 300,
   compactRestoreTopK: 5,
   compactRestoreMinScore: 0.1,
-  compactRestoreMinConfidence: 0.4,
+  compactRestoreMinConfidence: 0,
   compactMinReductionRatio: 0.25,
 };
 

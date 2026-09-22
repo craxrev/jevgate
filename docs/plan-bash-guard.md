@@ -56,7 +56,7 @@ Other features (done-check, subagent gate, compaction, UI) are unchanged.
   `transcript_path`). One Jev call. On any category over threshold, emit
   PreToolUse `deny` with `permissionDecisionReason` naming the category and
   score. Else silent. Log `ok` / `denied` with all scores.
-- Fail-closed: any Jev error or timeout → deny with reason `jevgate: Jev unreachable, refusing to run unguarded`. Free commands still run. Log `unreachable`.
+- Fail-closed: any Jev error or timeout → deny with reason `jevgate: Jev unreachable, refusing to run unguarded. Switch to auto mode (Shift+Tab) or retry.` The user falls back to auto mode while Jev is down. Free commands still run. Log `unreachable`.
 - Optional `bashMode` config: `guard` (default, deny) | `fastlane` (legacy
   allow behavior for auto-mode users). Keep `fastlane` minimal or drop it.
 

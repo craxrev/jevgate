@@ -69,19 +69,34 @@ function toSession(input: readonly SessionMessage[], output: readonly Msg[]): Se
   return output.map((m) => (own.has(m) ? (m as SessionMessage) : (m as SessionMessage)));
 }
 
+async function logCandidates($: Host): Promise<string[]> {
+  const home = (await $.env.get('HOME')) ?? '';
+  return [`${home}/.claude/plugins/data/jevgate-jevgate/decisions.jsonl`, `${home}/.claude/jevgate/decisions.jsonl`];
+}
+
 /** The newest entries of the decisions log, oldest first. Missing log = empty. */
 async function readLog($: Host): Promise<LogEntry[]> {
-  const home = (await $.env.get('HOME')) ?? '';
-  for (const p of [
-    `${home}/.claude/plugins/data/jevgate-jevgate/decisions.jsonl`,
-    `${home}/.claude/jevgate/decisions.jsonl`,
-  ]) {
+  for (const p of await logCandidates($)) {
     if (!(await $.fs.exists(p))) continue;
     let text = await $.fs.read(p);
     if (text.length > MAX_LOG_CHARS) text = text.slice(text.length - MAX_LOG_CHARS);
     return parseLog(text);
   }
   return [];
+}
+
+/** Appends one decision line to the same log the command hooks write. `$.fs` has no append, so read + write; best effort. */
+async function appendDecision($: Host, entry: Record<string, unknown>): Promise<void> {
+  try {
+    const paths = await logCandidates($);
+    let path = paths[0]!;
+    for (const p of paths) if (await $.fs.exists(p)) { path = p; break; }
+    const line = JSON.stringify({ ts: new Date().toISOString(), ...entry }) + '\n';
+    const existing = (await $.fs.exists(path)) ? await $.fs.read(path) : '';
+    await $.fs.write(path, existing + line);
+  } catch (err) {
+    $.ui.log(`jevgate: could not log compaction (${err instanceof Error ? err.message : String(err)})`);
+  }
 }
 
 /** Mutable UI state for one load of the module. */
@@ -129,7 +144,10 @@ export const register: Register = (on: On, options: PluginOptions) => {
     // lossy summary beats hitting the wall. Anywhere else there is room, so when
     // nothing can be trimmed the conversation simply stays as it is.
     const nearCeiling = e.trigger === 'auto' || e.trigger === 'precompute';
+    const session = await $.session.id().catch(() => undefined);
+    const rank: Record<string, unknown> = {};
     const bail = (why: string) => {
+      void appendDecision($, { feature: 'compact', action: nearCeiling ? 'summary' : 'kept-as-is', session, trigger: e.trigger, messages: e.messages.length, reason: why, ...rank, ms: Date.now() - t0 });
       if (nearCeiling) {
         $.ui.toast(`jevgate: built-in summary (${why})`, { timeoutMs: 8000 });
         return next(e);
@@ -154,8 +172,15 @@ export const register: Register = (on: On, options: PluginOptions) => {
           const apiKey = await resolveApiKey($, cfg);
           if (!apiKey) throw new Error('no TYPESAFE_API_KEY');
           const state = buildRankState(messages, cands, cfg.compactTruncateHeadChars);
-          const res = await ask(hostFetch($), { apiKey, model: cfg.model }, state, rankQuestions(cands));
+          const questions = rankQuestions(cands);
+          rank.jev_body_chars = JSON.stringify({ state, questions }).length;
+          const tJev = Date.now();
+          const res = await ask(hostFetch($), { apiKey, model: cfg.model }, state, questions);
+          rank.jev_ms = Date.now() - tJev;
           for (const c of cands) scores.set(c.id, noul(res, `keep_${c.id}`));
+          const vals = [...scores.values()].sort((a, b) => b - a);
+          rank.jev_scores = { n: vals.length, max: vals[0] ?? 0, mean: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0, top5: vals.slice(0, 5) };
+          rank.jev_usage = res.usage;
           const keep = pickRestore(scores, cfg.compactRestoreTopK, cfg.compactRestoreMinScore);
           for (const id of keep) truncate.delete(id);
           restored = keep.size;
@@ -165,7 +190,8 @@ export const register: Register = (on: On, options: PluginOptions) => {
           );
         } catch (err) {
           // Jev is optional here: without it every candidate is truncated.
-          $.ui.log(`jevgate compact: Jev ranking skipped (${err instanceof Error ? err.message : String(err)})`);
+          rank.jev_error = err instanceof Error ? err.message : String(err);
+          $.ui.log(`jevgate compact: Jev ranking skipped (${rank.jev_error})`);
         }
       }
 
@@ -175,6 +201,12 @@ export const register: Register = (on: On, options: PluginOptions) => {
       const summary = `${truncate.size} truncated, ${restored} restored, ${Math.round(ratio * 100)}% smaller, ${ms}ms`;
       if (ratio < cfg.compactMinReductionRatio) return bail(`only ${summary}`);
       $.ui.toast(`jevgate: kept all ${out.length} messages, no summary (${summary})`, { timeoutMs: 8000 });
+      void appendDecision($, {
+        feature: 'compact', action: 'verbatim', session, trigger: e.trigger, messages: out.length,
+        candidates: cands.length, truncated: truncate.size, restored, ratio: Math.round(ratio * 1000) / 1000,
+        chars_before: messages.reduce((a, m) => a + m.text.length + (m.toolResults ?? []).reduce((b, r) => b + r.text.length, 0), 0),
+        ...rank, ms,
+      });
 
       const rows: CompactionRow[] = cands.map((c) => {
         const isTruncated = truncate.has(c.id);

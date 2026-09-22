@@ -33,7 +33,7 @@ test('core list and special cases are free with any arguments', () => {
 test('anything not listed is not free', () => {
   notFree([
     ['npm test', /npm not in free set/], ['npm test 2>&1 | tail -20', /npm/], ['node x.js', /node/], ['python3 x.py', /python3/],
-    ['awk "{print}" f', /awk/], ['jq . f', /jq/], ['gh pr list', /gh/], ['uniq f', /uniq/], ['curl https://x', /curl/],
+    ['awk "{print}" f', /awk/], ['jq . f', /jq/], ['uniq f', /uniq/], ['curl https://x', /curl/],
     ['rm -rf dist', /rm/], ['mkdir x', /mkdir/], ['touch x', /touch/], ['npx tsc', /npx/], ['printenv', /printenv/], ['make', /make/],
   ]);
 });
@@ -69,7 +69,7 @@ test('git: write subcommands, write flags, dangerous global options', () => {
     ['git stash pop', /stash write/], ['git config user.name x', /config write/], ['git config --unset x', /config write/],
     ['git remote add o url', /git remote add/], ['git remote set-url origin x', /git remote set-url/], ['git worktree add x', /worktree write/],
     ['git -c core.pager=cat log', /git -c/], ['git --exec-path=/x log', /exec-path/], ['git diff --output=x', /--output/],
-    ['git log --output x', /--output/], ['git ls-remote -o x origin', /server-option/], ['git grep -O foo', /external tool/], ['git', /without subcommand/],
+    ['git log --output x', /--output/], ['git ls-remote -o x origin', /server-option/], ['git ls-remote origin', /ls-remote with operand/], ['git grep -O foo', /external tool/], ['git', /without subcommand/],
   ]);
 });
 
@@ -83,6 +83,14 @@ test('flag-gated commands', () => {
     ['date 1200', /date sets/], ['date -s x', /date -s/], ['hostname foo', /hostname sets/], ['docker run x', /docker run/],
     ['docker exec -it c sh', /docker exec/], ['base64 -o x f', /base64 -o/], ['man -P sh ls', /man -P/], ['pyright --createstub x', /pyright --createstub/],
     ['printf "%n" a', /printf directive/], ['pwd x', /pwd with arguments/], ['cd a b', /cd with several/], ['grep -e "a\nb" f', /newline/],
+  ]);
+});
+
+test('gh: only the read-only view/list pairs, never --web', () => {
+  free(['gh pr list --state open', 'gh pr view 42', 'gh pr checks 42', 'gh pr diff 42', 'gh issue list', 'gh repo view', 'gh run list', 'gh run view 123 --log', 'git ls-remote', 'git ls-remote --heads']);
+  notFree([
+    ['gh pr create --fill', /gh pr create/], ['gh pr merge 42', /gh pr merge/], ['gh api repos/x/y', /gh api/], ['gh pr view 42 --web', /gh --web/],
+    ['gh pr view -w 42', /gh -w/], ['gh auth token', /gh auth token/], ['gh', /gh/], ['gh release create v1', /gh release create/],
   ]);
 });
 

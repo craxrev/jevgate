@@ -268,6 +268,7 @@ function gitCheck(seg: Segment): string | undefined {
   switch (sub) {
     case 'ls-remote':
       if (flags.includes('-o') || flags.includes('--server-option')) return 'git ls-remote --server-option';
+      if (pos.length > 0) return 'git ls-remote with operand';
       return undefined;
     case 'branch':
       if (flags.some((f) => GIT_BRANCH_WRITE.has(f))) return 'git branch write flag';
@@ -295,6 +296,16 @@ function gitCheck(seg: Segment): string | undefined {
   }
 }
 
+/** `gh <cmd> <sub>` pairs Claude Code treats as read-only (`rgt`); `--web` opens a browser. */
+const GH_READ = new Set(['pr view', 'pr list', 'pr status', 'pr checks', 'pr diff', 'issue view', 'issue list', 'issue status', 'repo view', 'run list', 'run view']);
+
+function ghCheck(seg: Segment): string | undefined {
+  const pos = positionals(seg);
+  const pair = `${pos[0] ?? ''} ${pos[1] ?? ''}`;
+  if (!GH_READ.has(pair)) return `gh ${pair.trim()}`.trim();
+  return undefined;
+}
+
 function xargsCheck(seg: Segment): string | undefined {
   let k = 0;
   while (k < seg.args.length) {
@@ -313,6 +324,7 @@ function xargsCheck(seg: Segment): string | undefined {
 const RULES: Record<string, Rule> = {
   xargs: { check: xargsCheck },
   git: { check: gitCheck },
+  gh: { forbid: new Set(['-w', '--web']), check: ghCheck },
   file: forbidAny('-C', '--compile', '-m', '--magic-file'),
   sed: {
     allow: SED_SAFE,

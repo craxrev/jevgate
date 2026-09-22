@@ -232,7 +232,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
       const line = rowCache.get(e.requestId);
       if (!line) return engineRow;
       const { Box, Text } = $.ui.resolve(e);
-      return h(Box, { flexDirection: 'column' }, engineRow, h(Text, { dimColor: true, wrap: 'truncate' }, `  ${line}`));
+      return h(Box, { flexDirection: 'column' }, engineRow, h(Text, { dimColor: true, wrap: 'wrap' }, `  ${line}`));
     } catch {
       return engineRow;
     }

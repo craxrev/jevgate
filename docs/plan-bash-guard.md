@@ -189,6 +189,41 @@ in-place file rewrites with a clean git status.
 6. Docs. Bump version, marketplace update, plugin update, commit.
 7. User switches to bypass mode and starts emptying `permissions.deny`.
 
+## Loose ends (2026-09-22, after 0.3.8)
+
+Everything below is decided but not built, or built and awaiting a look.
+
+1. Compaction candidate cap: rank only the ~150 largest tool outputs, largest
+   first, so a big session never exceeds Jev's 32k-token `state` limit (64k per
+   request incl. questions). Above the cap: truncate without asking. Add after
+   reading the next `compact` entry in `decisions.jsonl` (0.3.8 logs
+   `jev_body_chars`, `jev_ms`, `jev_scores`, `jev_usage`, `restored`, `ratio`).
+2. Row line placement: 0.3.7 moved the dim `▸ jevgate …` line from the ToolUse
+   row to the ToolResult block so it sits under the classifier verdict. Not yet
+   confirmed on screen. Downsides: appears only when the call finishes; folded
+   ToolGroup rows get no line. Revert = one word in hooks/compact.ts.
+3. `exceeds_request` stays log-only. With role-tagged `recent` (0.3.6) agreed
+   proposals dropped to 0.2–0.5, the unrequested case stayed 0.79, but "can you
+   just amend!" → amend still scored 0.80. Revisit with more data; 0.85 is the
+   defensible number if it must deny today.
+4. Guard cost: ~5k tokens per judged call, 3.7k of it the eight questions.
+   Optional halving: shorter questions, `recent` capped at 600 chars/turn, send
+   `recent` only when exceeds_request is armed. TypeSafe bills $0.042/Mtok, so
+   this is ~$0.02/day; low priority.
+5. Repo rot: `npm run typecheck` fails on the old tsconfig (`baseUrl`, node
+   types); hooks/compact.ts has three pre-existing render-hook return-type
+   errors (`RenderElement | undefined`). Cosmetic.
+6. Own-server rsync/scp/ssh scores 0.6–0.97 on exfiltrates/deploys; Jev cannot
+   tell the user's host from a stranger's. Fix: a `trustedHosts` option or
+   `~/.ssh/config` aliases in the state. Not built.
+7. Step 7 is the user's: `permissions.defaultMode: "bypassPermissions"`.
+   `permissions.deny` was emptied on 2026-09-22.
+8. Post-compaction check: read the newest `feature: "compact"` line in
+   `~/.claude/plugins/data/jevgate-jevgate/decisions.jsonl` and compare the
+   Jev body size and scores against the claude-diagnosis session (93
+   candidates, 98,405 chars, all scores under 0.3, nothing restored, real
+   saving 500k → 352k tokens).
+
 ## Open questions
 
 - Whether to guard `Agent` spawns and `SendMessage` in bypass mode too, since

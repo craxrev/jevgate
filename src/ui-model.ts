@@ -60,12 +60,12 @@ export function tally(entries: readonly LogEntry[], session: string): Tally {
   return t;
 }
 
-/** Short form for the prompt footer's mode labels: `jev ✓5 ↷1 ⛔1 ⇊1`. */
+/** Short form for the prompt footer's mode labels: `jev ✓5 ↷1 ✗1 ⇊1`. */
 export function footerLabel(t: Tally, compactions: number): string | undefined {
   const parts: string[] = [];
   if (t.allowed) parts.push(`✓${t.allowed}`);
   if (t.passed) parts.push(`↷${t.passed}`);
-  if (t.blocks) parts.push(`⛔${t.blocks}`);
+  if (t.blocks) parts.push(`✗${t.blocks}`);
   if (t.agentDenies) parts.push(`⊘${t.agentDenies}`);
   if (compactions) parts.push(`⇊${compactions}`);
   return parts.length ? `jev ${parts.join(' ')}` : undefined;
@@ -75,7 +75,7 @@ export function statusText(t: Tally, compactions: number): string | undefined {
   const parts: string[] = [];
   if (t.allowed) parts.push(`✓${t.allowed} fast-lane`);
   if (t.passed) parts.push(`↷${t.passed} classifier`);
-  if (t.blocks) parts.push(`⛔${t.blocks} done-check`);
+  if (t.blocks) parts.push(`✗${t.blocks} done-check`);
   if (t.agentDenies) parts.push(`⊘${t.agentDenies} subagent`);
   if (compactions) parts.push(`⇊${compactions} compact`);
   return parts.length ? `jev ${parts.join(' · ')}` : undefined;
@@ -91,7 +91,7 @@ function fmtScores(s: Record<string, number> | undefined): string {
 /** The dim line under a Bash row; undefined keeps the row as the engine drew it. */
 export function bashRowText(e: LogEntry): string | undefined {
   if (e.feature !== 'bash') return undefined;
-  if (e.action === 'allow') return `⚡ jevgate fast-lane · ${fmtScores(e.scores)} · ${e.ms ?? '?'}ms`;
+  if (e.action === 'allow') return `▸ jevgate fast-lane · ${fmtScores(e.scores)} · ${e.ms ?? '?'}ms`;
   if (e.action === 'pass') return `↷ jevgate → classifier · ${fmtScores(e.scores)}`;
   return undefined;
 }

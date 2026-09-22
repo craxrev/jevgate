@@ -29,7 +29,7 @@ test('statusText is compact and empty when nothing happened', () => {
 
 test('footerLabel is the short form', () => {
   assert.equal(footerLabel({ allowed: 0, passed: 0, passthrough: 0, blocks: 0, agentDenies: 0 }, 0), undefined);
-  assert.equal(footerLabel({ allowed: 5, passed: 1, passthrough: 9, blocks: 1, agentDenies: 0 }, 1), 'jev ✓5 ↷1 ⛔1 ⇊1');
+  assert.equal(footerLabel({ allowed: 5, passed: 1, passthrough: 9, blocks: 1, agentDenies: 0 }, 1), 'jev ✓5 ↷1 ✗1 ⇊1');
 });
 
 test('bashRowText only for judged commands', () => {

@@ -7,7 +7,7 @@ export type Config = {
   logPath?: string;
 
   bashEnabled: boolean;
-  bashRecentMessages: number;
+  bashRecentTurns: number;
   /** Allow (skip the classifier) when every deny category scores under this; 0 disables. */
   bashAllowMax: number;
   /** Deny thresholds per harm category; 0 means log only. */
@@ -50,7 +50,7 @@ export const DEFAULTS: Config = {
   timeoutMs: 4000,
 
   bashEnabled: true,
-  bashRecentMessages: 5,
+  bashRecentTurns: 8,
   bashAllowMax: 0.3,
   bashDenyDestroy: 0.5,
   bashDenyDeleteOutside: 0.5,
@@ -117,7 +117,7 @@ export function fromRaw(raw: Raw): Config {
     logPath: str(raw.logPath),
 
     bashEnabled: bool(raw.bashEnabled, d.bashEnabled),
-    bashRecentMessages: num(raw.bashRecentMessages, d.bashRecentMessages),
+    bashRecentTurns: num(raw.bashRecentTurns, d.bashRecentTurns),
     bashAllowMax: num(raw.bashAllowMax, d.bashAllowMax),
     bashDenyDestroy: num(raw.bashDenyDestroy, d.bashDenyDestroy),
     bashDenyDeleteOutside: num(raw.bashDenyDeleteOutside, d.bashDenyDeleteOutside),

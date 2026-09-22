@@ -54,7 +54,7 @@ async function main(): Promise<void> {
     parsed: free.parsed,
     cwd: input.cwd,
     transcriptPath: input.transcript_path,
-    recentMessages: cfg.bashRecentMessages,
+    recentTurns: cfg.bashRecentTurns,
   });
   try {
     const res = await ask(nodeFetch(cfg.timeoutMs), { apiKey: cfg.apiKey, model: cfg.model }, state, QUESTIONS);

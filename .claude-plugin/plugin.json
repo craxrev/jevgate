@@ -1,6 +1,6 @@
 {
   "name": "jevgate",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Jev-backed gates for Claude Code: bash guard for bypass mode, file guard, done-check, subagent gate, verbatim compaction. Each feature toggles independently.",
   "license": "MIT",
   "author": {
@@ -25,11 +25,11 @@
       "description": "Deny harmful shell commands in bypassPermissions mode. Read-only commands from Claude Code's own free set run without asking Jev; everything else is judged once.",
       "default": true
     },
-    "bashRecentMessages": {
+    "bashRecentTurns": {
       "type": "number",
-      "title": "Bash guard: recent messages",
-      "description": "How many of the latest user messages Jev sees when judging a command.",
-      "default": 5
+      "title": "Guard: recent turns",
+      "description": "How many of the latest conversation turns (user and assistant) Jev sees when judging whether a command or write exceeds the request.",
+      "default": 8
     },
     "bashAllowMax": {
       "type": "number",

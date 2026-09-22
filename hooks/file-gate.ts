@@ -7,7 +7,7 @@ import { readStdinJson, emit } from '../src/stdin.ts';
 import { fromEnv, defaultLogPath } from '../src/config.ts';
 import { ask, nodeFetch } from '../src/jev.ts';
 import { appendLog } from '../src/log.ts';
-import { execRunner, recentUserMessages } from '../src/bash-context.ts';
+import { execRunner, recentTurns } from '../src/bash-context.ts';
 import { denyOutput, failsClosed, UNREACHABLE_REASON } from '../src/bash-policy.ts';
 import {
   WRITE_TOOLS,
@@ -71,7 +71,7 @@ async function main(): Promise<void> {
   const state: FileState = { tool, path, cwd: input.cwd, repo_root: repoRoot };
   const head = contentHead(input.tool_input);
   if (head) state.content_head = head;
-  const recent = recentUserMessages(input.transcript_path, cfg.bashRecentMessages);
+  const recent = recentTurns(input.transcript_path, cfg.bashRecentTurns);
   if (recent) state.recent = recent;
   try {
     const res = await ask(nodeFetch(cfg.timeoutMs), { apiKey: cfg.apiKey, model: cfg.model }, state, FILE_QUESTIONS);

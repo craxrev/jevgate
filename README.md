@@ -55,7 +55,9 @@ For each `Bash` call:
    About a quarter of real calls.
 2. **Context.** The hook gathers, without any model: the command as written, `cwd`,
    the repo root, `git remote -v`, `git status --porcelain` (only when the command
-   touches git or files), and the last 5 user messages from the transcript.
+   touches git or files), and the last 8 turns of the conversation, user and
+   assistant, with roles. Only user turns count as requests; an assistant turn
+   counts once the user agreed to it.
 3. **One Jev call**, eight `noul` questions, one per category:
 
    | Category | Deny at | Examples |

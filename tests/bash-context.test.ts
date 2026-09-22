@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { gatherState, recentUserMessages, type Runner } from '../src/bash-context.ts';
+import { gatherState, recentTurns, type Runner } from '../src/bash-context.ts';
 import { parseShell } from '../src/shell.ts';
 
 const line = (type: string, text: string, extra: Record<string, unknown> = {}) =>
@@ -30,7 +30,7 @@ const fakeGit =
 
 test('state carries the command as written, repo root and remotes', () => {
   const command = 'cd x && npm test 2>&1 | tail -5';
-  const s = gatherState({ command, parsed: parseShell(command), cwd: '/repo/src', recentMessages: 5 }, fakeGit());
+  const s = gatherState({ command, parsed: parseShell(command), cwd: '/repo/src', recentTurns: 5 }, fakeGit());
   assert.equal(s.command, command);
   assert.equal(s.cwd, '/repo/src');
   assert.equal(s.repo_root, '/repo');
@@ -41,33 +41,36 @@ test('state carries the command as written, repo root and remotes', () => {
 
 test('git status is gathered only for git, file writes, redirects and scripts', () => {
   for (const c of ['git checkout -- .', 'rm -rf build', 'echo x > f', "python3 - <<'EOF'\nx\nEOF"]) {
-    const s = gatherState({ command: c, parsed: parseShell(c), cwd: '/repo', recentMessages: 0 }, fakeGit());
+    const s = gatherState({ command: c, parsed: parseShell(c), cwd: '/repo', recentTurns: 0 }, fakeGit());
     assert.equal(s.git_status, ' M src/a.ts\n?? new.txt', c);
   }
-  const clean = gatherState({ command: 'rm -rf build', parsed: parseShell('rm -rf build'), cwd: '/repo', recentMessages: 0 }, fakeGit({ 'status --porcelain': '' }));
+  const clean = gatherState({ command: 'rm -rf build', parsed: parseShell('rm -rf build'), cwd: '/repo', recentTurns: 0 }, fakeGit({ 'status --porcelain': '' }));
   assert.equal(clean.git_status, '');
 });
 
 test('outside a repository only command and cwd are set', () => {
   const run: Runner = () => undefined;
-  const s = gatherState({ command: 'rm -rf ~/x', parsed: parseShell('rm -rf ~/x'), cwd: '/Users/me', recentMessages: 0 }, run);
+  const s = gatherState({ command: 'rm -rf ~/x', parsed: parseShell('rm -rf ~/x'), cwd: '/Users/me', recentTurns: 0 }, run);
   assert.deepEqual(s, { command: 'rm -rf ~/x', cwd: '/Users/me' });
 });
 
-test('recent user messages: last n, oldest first, reminders skipped, long ones truncated', () => {
+test('recent turns: last n of both roles, oldest first, reminders skipped, long ones truncated', () => {
   const p = transcript(
     line('user', 'first ask'),
-    line('assistant', 'ok'),
+    line('assistant', 'Done. Commit it?'),
     line('user', '<system-reminder>ignored</system-reminder>'),
-    line('user', 'second ask'),
+    line('user', 'yes, commit it'),
     line('user', 'side', { isSidechain: true }),
-    line('user', 'x'.repeat(2000)),
+    line('assistant', 'x'.repeat(2000)),
     line('user', 'third ask'),
   );
-  assert.deepEqual(recentUserMessages(p, 2), ['x'.repeat(1500) + ' […]', 'third ask']);
-  assert.deepEqual(recentUserMessages(p, 10), ['first ask', 'second ask', 'x'.repeat(1500) + ' […]', 'third ask']);
-  assert.equal(recentUserMessages(p, 0), undefined);
-  assert.equal(recentUserMessages('/nonexistent', 5), undefined);
-  const s = gatherState({ command: 'ls', parsed: parseShell('ls'), transcriptPath: p, recentMessages: 1 }, () => undefined);
-  assert.deepEqual(s.recent, ['third ask']);
+  assert.deepEqual(recentTurns(p, 2), [{ role: 'assistant', text: 'x'.repeat(1500) + ' […]' }, { role: 'user', text: 'third ask' }]);
+  assert.deepEqual(
+    recentTurns(p, 10).map((t) => `${t.role}: ${t.text.slice(0, 16)}`),
+    ['user: first ask', 'assistant: Done. Commit it?', 'user: yes, commit it', 'assistant: xxxxxxxxxxxxxxxx', 'user: third ask'],
+  );
+  assert.equal(recentTurns(p, 0), undefined);
+  assert.equal(recentTurns('/nonexistent', 5), undefined);
+  const s = gatherState({ command: 'ls', parsed: parseShell('ls'), transcriptPath: p, recentTurns: 1 }, () => undefined);
+  assert.deepEqual(s.recent, [{ role: 'user', text: 'third ask' }]);
 });

@@ -25,15 +25,24 @@ export type ContextInput = {
   parsed: Parsed;
   cwd?: string;
   transcriptPath?: string;
-  recentMessages: number;
+  recentTurns: number;
 };
 
-/** The last `n` human messages of the main conversation, oldest first, each truncated. */
-export function recentUserMessages(transcriptPath: string | undefined, n: number): string[] | undefined {
+export type RecentTurn = { role: 'user' | 'assistant'; text: string };
+
+/**
+ * The last `n` turns of the main conversation, both roles, oldest first, each
+ * truncated. Jev is told that only user turns are requests and an assistant
+ * turn counts only once the user agreed to it.
+ */
+export function recentTurns(transcriptPath: string | undefined, n: number): RecentTurn[] | undefined {
   if (n <= 0) return undefined;
-  const users = readTranscript(transcriptPath).filter((t) => t.role === 'user');
-  if (users.length === 0) return undefined;
-  return users.slice(-n).map((t) => (t.text.length > RECENT_MAX_CHARS ? t.text.slice(0, RECENT_MAX_CHARS) + ' […]' : t.text));
+  const turns = readTranscript(transcriptPath);
+  if (turns.length === 0) return undefined;
+  return turns.slice(-n).map((t) => ({
+    role: t.role,
+    text: t.text.length > RECENT_MAX_CHARS ? t.text.slice(0, RECENT_MAX_CHARS) + ' […]' : t.text,
+  }));
 }
 
 function trimStatus(out: string): string {
@@ -54,7 +63,7 @@ export function gatherState(input: ContextInput, run: Runner = execRunner): Bash
       if (status !== undefined) state.git_status = trimStatus(status);
     }
   }
-  const recent = recentUserMessages(input.transcriptPath, input.recentMessages);
+  const recent = recentTurns(input.transcriptPath, input.recentTurns);
   if (recent) state.recent = recent;
   return state;
 }

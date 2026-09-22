@@ -1,6 +1,6 @@
 """Dump every Bash call in the local transcripts as JSON lines for the probes:
 {"cmd", "bucket" (analyze2), "project" (decoded transcript dir), "recent" (last
-5 user messages before the call, truncated)}. Stays in the scratchpad: `recent`
+8 turns of both roles before the call, as {role, text}, truncated)}. Stays in the scratchpad: `recent`
 is private conversation text.
 
     python3 scripts/session-analysis/dump_buckets.py > /path/to/buckets.jsonl
@@ -9,7 +9,7 @@ import json, re, sys
 import analyze as A
 import analyze2 as A2
 
-RECENT_N = 5
+RECENT_N = 8
 RECENT_MAX = 1500
 META = re.compile(r'^<(system-reminder|local-command|command-name|bash-input|task-notification)')
 
@@ -37,7 +37,7 @@ def iter_calls_with_recent(path):
             if obj.get('type') == 'user':
                 t = text_of(msg.get('content')).strip()
                 if t and not META.match(t):
-                    recent.append(t if len(t) <= RECENT_MAX else t[:RECENT_MAX] + ' […]')
+                    recent.append({"role": "user", "text": t if len(t) <= RECENT_MAX else t[:RECENT_MAX] + ' […]'})
                     recent = recent[-RECENT_N:]
                 continue
             if obj.get('type') != 'assistant':
@@ -45,6 +45,10 @@ def iter_calls_with_recent(path):
             content = msg.get('content')
             if not isinstance(content, list):
                 continue
+            t = text_of(content).strip()
+            if t:
+                recent.append({"role": "assistant", "text": t if len(t) <= RECENT_MAX else t[:RECENT_MAX] + ' […]'})
+                recent = recent[-RECENT_N:]
             for block in content:
                 if isinstance(block, dict) and block.get('type') == 'tool_use' and block.get('name') == 'Bash':
                     yield block.get('input', {}).get('command', ''), list(recent)

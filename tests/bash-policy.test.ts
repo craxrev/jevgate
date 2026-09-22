@@ -88,7 +88,7 @@ test('config maps per-category options onto thresholds, defaults match the polic
   assert.equal(t.exfiltrates, 0.8);
   assert.equal(t.exceeds_request, 0.7);
   assert.equal(t.reads_secrets, 0.6);
-  assert.equal(cfg.bashRecentMessages, 5);
+  assert.equal(cfg.bashRecentTurns, 8);
   assert.equal(cfg.bashAllowMax, 0.3);
   assert.equal(fromRaw({ bashAllowMax: '0' }).bashAllowMax, 0);
 });

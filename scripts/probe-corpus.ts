@@ -24,7 +24,7 @@ const concurrency = Number(opt('--concurrency', '4'));
 const out = opt('--out', '');
 const seed = Number(opt('--seed', '1'));
 
-type Row = { cmd: string; bucket?: string; project?: string; recent?: string[]; expect?: string };
+type Row = { cmd: string; bucket?: string; project?: string; recent?: { role: 'user' | 'assistant'; text: string }[]; expect?: string };
 type Result = Row & { scores: Record<Category, number>; deny?: Category; ms: number };
 
 const rows: Row[] = readFileSync(file, 'utf8')

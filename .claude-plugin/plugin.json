@@ -1,0 +1,105 @@
+{
+  "name": "jevgate",
+  "version": "0.1.1",
+  "description": "Jev-backed gates for Claude Code: bash pre-approval, done-check, subagent gate, verbatim compaction. Each feature toggles independently.",
+  "license": "MIT",
+  "author": { "name": "craxrev" },
+  "userConfig": {
+    "apiKey": {
+      "type": "string",
+      "title": "TypeSafe API key",
+      "description": "Leave unset to use TYPESAFE_API_KEY from the environment or settings env.",
+      "sensitive": true
+    },
+    "model": {
+      "type": "string",
+      "title": "Jev model",
+      "description": "TypeSafe model name.",
+      "default": "jev-latest"
+    },
+    "bashEnabled": {
+      "type": "boolean",
+      "title": "Bash pre-approval",
+      "description": "Pre-approve read-only and test/build/lint shell commands so they skip the auto-mode classifier.",
+      "default": true
+    },
+    "bashThreshold": {
+      "type": "number",
+      "title": "Bash allow threshold",
+      "description": "Minimum Jev probability for read-only or dev-task, and maximum (1 - threshold) for unsafe.",
+      "default": 0.95
+    },
+    "bashDevUnsafeMax": {
+      "type": "number",
+      "title": "Bash dev-task unsafe ceiling",
+      "description": "Maximum Jev 'unsafe' probability tolerated for a test/build/lint command. Runners execute project scripts, so Jev scores them 0.2-0.5.",
+      "default": 0.6
+    },
+    "doneEnabled": {
+      "type": "boolean",
+      "title": "Done-check",
+      "description": "Block Claude from stopping when the diff does not cover the request or the final message overclaims.",
+      "default": true
+    },
+    "doneMaxBlocks": {
+      "type": "number",
+      "title": "Done-check max blocks",
+      "description": "Blocks per turn before letting Claude stop anyway.",
+      "default": 2
+    },
+    "agentEnabled": {
+      "type": "boolean",
+      "title": "Subagent gate",
+      "description": "Deny a subagent spawn when the answer is already in the recent conversation.",
+      "default": true
+    },
+    "agentThreshold": {
+      "type": "number",
+      "title": "Subagent deny threshold",
+      "description": "Minimum Jev probability that the answer is already in context.",
+      "default": 0.95
+    },
+    "compactEnabled": {
+      "type": "boolean",
+      "title": "Verbatim compaction",
+      "description": "Replace the compaction summary with the original messages, long tool outputs truncated. Requires CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1.",
+      "default": true
+    },
+    "compactUseJev": {
+      "type": "boolean",
+      "title": "Compaction: rank with Jev",
+      "description": "Ask Jev which truncated outputs to restore verbatim. Off means deterministic truncation only.",
+      "default": true
+    },
+    "compactAtPercent": {
+      "type": "number",
+      "title": "Compaction trigger percent",
+      "description": "Context usage at which jevgate requests compaction itself.",
+      "default": 60
+    },
+    "compactPreserveRecent": {
+      "type": "number",
+      "title": "Compaction: recent messages pinned",
+      "description": "Newest messages never truncated. The first message and all Edit/Write results are always pinned.",
+      "default": 6
+    },
+    "compactTruncateHeadChars": {
+      "type": "number",
+      "title": "Compaction: head chars kept",
+      "description": "Characters of a truncated tool output kept before the note.",
+      "default": 300
+    },
+    "compactRestoreTopK": {
+      "type": "number",
+      "title": "Compaction: outputs restored",
+      "description": "How many of the highest-scoring truncated outputs Jev may restore verbatim.",
+      "default": 5
+    },
+    "compactMinReductionRatio": {
+      "type": "number",
+      "title": "Compaction: minimum reduction",
+      "description": "Below this fraction saved, fall back to the built-in summary.",
+      "default": 0.25
+    }
+  }
+}

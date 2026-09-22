@@ -1,18 +1,60 @@
-"""Dump every Bash call in the local transcripts with its analyze2 bucket, as
-JSON lines {"cmd": ..., "bucket": ...}. Feed the file to scripts/free-corpus.ts.
+"""Dump every Bash call in the local transcripts as JSON lines for the probes:
+{"cmd", "bucket" (analyze2), "project" (decoded transcript dir), "recent" (last
+5 user messages before the call, truncated)}. Stays in the scratchpad: `recent`
+is private conversation text.
 
     python3 scripts/session-analysis/dump_buckets.py > /path/to/buckets.jsonl
 """
-import json, sys
+import json, re, sys
 import analyze as A
 import analyze2 as A2
 
+RECENT_N = 5
+RECENT_MAX = 1500
+META = re.compile(r'^<(system-reminder|local-command|command-name|bash-input|task-notification)')
+
+def text_of(content):
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ''
+    return '\n'.join(b.get('text', '') for b in content if isinstance(b, dict) and b.get('type') == 'text')
+
+def iter_calls_with_recent(path):
+    recent = []
+    with open(path, 'r', errors='replace') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+            if obj.get('isSidechain'):
+                continue
+            msg = obj.get('message', {})
+            if obj.get('type') == 'user':
+                t = text_of(msg.get('content')).strip()
+                if t and not META.match(t):
+                    recent.append(t if len(t) <= RECENT_MAX else t[:RECENT_MAX] + ' […]')
+                    recent = recent[-RECENT_N:]
+                continue
+            if obj.get('type') != 'assistant':
+                continue
+            content = msg.get('content')
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                if isinstance(block, dict) and block.get('type') == 'tool_use' and block.get('name') == 'Bash':
+                    yield block.get('input', {}).get('command', ''), list(recent)
+
 def main():
     for proj, sid, path in A.find_all_transcripts():
-        calls, _ = A.iter_bash_calls(path)
-        for cmd in calls:
+        project = '/' + proj.lstrip('-').replace('-', '/')
+        for cmd, recent in iter_calls_with_recent(path):
             final, _, _, _ = A2.classify_command2(cmd)
-            sys.stdout.write(json.dumps({"cmd": cmd, "bucket": final}) + "\n")
+            sys.stdout.write(json.dumps({"cmd": cmd, "bucket": final, "project": project, "recent": recent}) + "\n")
 
 if __name__ == '__main__':
     main()

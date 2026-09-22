@@ -51,7 +51,7 @@ export const DEFAULTS: Config = {
   bashDenyDeploy: 0.6,
   bashDenyExfil: 0.6,
   bashDenySecrets: 0.6,
-  bashDenySystem: 0.6,
+  bashDenySystem: 0.7,
   bashDenyExceeds: 0,
 
   doneEnabled: true,

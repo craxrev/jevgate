@@ -71,7 +71,7 @@
       "type": "number",
       "title": "Deny: escalates or changes system",
       "description": "Minimum Jev probability to deny: sudo, launchctl, crontab, system config, unrelated processes, global installs. 0 means log only.",
-      "default": 0.6
+      "default": 0.7
     },
     "bashDenyExceeds": {
       "type": "number",

@@ -1,9 +1,11 @@
 {
   "name": "jevgate",
   "version": "0.1.7",
-  "description": "Jev-backed gates for Claude Code: bash pre-approval, done-check, subagent gate, verbatim compaction. Each feature toggles independently.",
+  "description": "Jev-backed gates for Claude Code: bash guard for bypass mode, done-check, subagent gate, verbatim compaction. Each feature toggles independently.",
   "license": "MIT",
-  "author": { "name": "craxrev" },
+  "author": {
+    "name": "craxrev"
+  },
   "userConfig": {
     "apiKey": {
       "type": "string",
@@ -19,21 +21,63 @@
     },
     "bashEnabled": {
       "type": "boolean",
-      "title": "Bash pre-approval",
-      "description": "Pre-approve read-only and test/build/lint shell commands so they skip the auto-mode classifier.",
+      "title": "Bash guard",
+      "description": "Deny harmful shell commands in bypassPermissions mode. Read-only commands from Claude Code's own free set run without asking Jev; everything else is judged once.",
       "default": true
     },
-    "bashThreshold": {
+    "bashRecentMessages": {
       "type": "number",
-      "title": "Bash allow threshold",
-      "description": "Minimum Jev probability for read-only or dev-task, and maximum (1 - threshold) for unsafe.",
-      "default": 0.95
+      "title": "Bash guard: recent messages",
+      "description": "How many of the latest user messages Jev sees when judging a command.",
+      "default": 5
     },
-    "bashDevUnsafeMax": {
+    "bashDenyDestroy": {
       "type": "number",
-      "title": "Bash dev-task unsafe ceiling",
-      "description": "Maximum Jev 'unsafe' probability tolerated for a test/build/lint command. Runners execute project scripts, so Jev scores them 0.2-0.5.",
+      "title": "Deny: destroys uncommitted work",
+      "description": "Minimum Jev probability to deny: reset --hard, checkout --, clean, or rm on paths with uncommitted changes. 0 means log only.",
+      "default": 0.5
+    },
+    "bashDenyDeleteOutside": {
+      "type": "number",
+      "title": "Deny: deletes outside repo",
+      "description": "Minimum Jev probability to deny: rm/mv targets outside the repository and scratchpad, or critical paths. 0 means log only.",
+      "default": 0.5
+    },
+    "bashDenyHistory": {
+      "type": "number",
+      "title": "Deny: rewrites shared history",
+      "description": "Minimum Jev probability to deny: force push, push to protected branches, remote changes, filter-branch. 0 means log only.",
+      "default": 0.5
+    },
+    "bashDenyDeploy": {
+      "type": "number",
+      "title": "Deny: deploys or publishes",
+      "description": "Minimum Jev probability to deny: deploy, publish, release, merge, production targets. 0 means log only.",
       "default": 0.6
+    },
+    "bashDenyExfil": {
+      "type": "number",
+      "title": "Deny: exfiltrates",
+      "description": "Minimum Jev probability to deny: sends local data to a host that is not localhost or a known remote. 0 means log only.",
+      "default": 0.6
+    },
+    "bashDenySecrets": {
+      "type": "number",
+      "title": "Deny: reads secrets",
+      "description": "Minimum Jev probability to deny: .env, ~/.ssh, ~/.aws, keychain, tokens. 0 means log only.",
+      "default": 0.6
+    },
+    "bashDenySystem": {
+      "type": "number",
+      "title": "Deny: escalates or changes system",
+      "description": "Minimum Jev probability to deny: sudo, launchctl, crontab, system config, unrelated processes, global installs. 0 means log only.",
+      "default": 0.6
+    },
+    "bashDenyExceeds": {
+      "type": "number",
+      "title": "Deny: exceeds request",
+      "description": "Minimum Jev probability to deny: does something the recent user messages did not ask for. 0 logs the score without denying.. 0 means log only.",
+      "default": 0
     },
     "doneEnabled": {
       "type": "boolean",

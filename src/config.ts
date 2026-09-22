@@ -1,3 +1,5 @@
+import type { BashThresholds } from './bash-policy.ts';
+
 export type Config = {
   apiKey?: string;
   model: string;
@@ -5,8 +7,16 @@ export type Config = {
   logPath?: string;
 
   bashEnabled: boolean;
-  bashThreshold: number;
-  bashDevUnsafeMax: number;
+  bashRecentMessages: number;
+  /** Deny thresholds per harm category; 0 means log only. */
+  bashDenyDestroy: number;
+  bashDenyDeleteOutside: number;
+  bashDenyHistory: number;
+  bashDenyDeploy: number;
+  bashDenyExfil: number;
+  bashDenySecrets: number;
+  bashDenySystem: number;
+  bashDenyExceeds: number;
 
   doneEnabled: boolean;
   doneMaxBlocks: number;
@@ -34,8 +44,15 @@ export const DEFAULTS: Config = {
   timeoutMs: 4000,
 
   bashEnabled: true,
-  bashThreshold: 0.95,
-  bashDevUnsafeMax: 0.6,
+  bashRecentMessages: 5,
+  bashDenyDestroy: 0.5,
+  bashDenyDeleteOutside: 0.5,
+  bashDenyHistory: 0.5,
+  bashDenyDeploy: 0.6,
+  bashDenyExfil: 0.6,
+  bashDenySecrets: 0.6,
+  bashDenySystem: 0.6,
+  bashDenyExceeds: 0,
 
   doneEnabled: true,
   doneMaxBlocks: 2,
@@ -89,8 +106,15 @@ export function fromRaw(raw: Raw): Config {
     logPath: str(raw.logPath),
 
     bashEnabled: bool(raw.bashEnabled, d.bashEnabled),
-    bashThreshold: num(raw.bashThreshold, d.bashThreshold),
-    bashDevUnsafeMax: num(raw.bashDevUnsafeMax, d.bashDevUnsafeMax),
+    bashRecentMessages: num(raw.bashRecentMessages, d.bashRecentMessages),
+    bashDenyDestroy: num(raw.bashDenyDestroy, d.bashDenyDestroy),
+    bashDenyDeleteOutside: num(raw.bashDenyDeleteOutside, d.bashDenyDeleteOutside),
+    bashDenyHistory: num(raw.bashDenyHistory, d.bashDenyHistory),
+    bashDenyDeploy: num(raw.bashDenyDeploy, d.bashDenyDeploy),
+    bashDenyExfil: num(raw.bashDenyExfil, d.bashDenyExfil),
+    bashDenySecrets: num(raw.bashDenySecrets, d.bashDenySecrets),
+    bashDenySystem: num(raw.bashDenySystem, d.bashDenySystem),
+    bashDenyExceeds: num(raw.bashDenyExceeds, d.bashDenyExceeds),
 
     doneEnabled: bool(raw.doneEnabled, d.doneEnabled),
     doneMaxBlocks: num(raw.doneMaxBlocks, d.doneMaxBlocks),
@@ -128,6 +152,20 @@ export function fromEnv(env: Record<string, string | undefined>): Config {
   const cfg = fromRaw(raw);
   cfg.apiKey = cfg.apiKey ?? env.TYPESAFE_API_KEY;
   return cfg;
+}
+
+/** The per-category deny thresholds as the bash policy wants them. */
+export function bashThresholds(cfg: Config): BashThresholds {
+  return {
+    destroys_uncommitted_work: cfg.bashDenyDestroy,
+    deletes_outside_repo: cfg.bashDenyDeleteOutside,
+    rewrites_shared_history: cfg.bashDenyHistory,
+    deploys_or_publishes: cfg.bashDenyDeploy,
+    exfiltrates: cfg.bashDenyExfil,
+    reads_secrets: cfg.bashDenySecrets,
+    escalates_or_system: cfg.bashDenySystem,
+    exceeds_request: cfg.bashDenyExceeds,
+  };
 }
 
 export function defaultLogPath(env: Record<string, string | undefined>): string {

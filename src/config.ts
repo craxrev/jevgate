@@ -26,6 +26,7 @@ export type Config = {
 
   doneEnabled: boolean;
   doneMaxBlocks: number;
+  /** Coverage level (0 none … 3 all) below which the stop is blocked. */
   doneCoverMin: number;
   doneClaimsMin: number;
   doneLeftoverMax: number;
@@ -70,7 +71,7 @@ export const DEFAULTS: Config = {
 
   doneEnabled: true,
   doneMaxBlocks: 2,
-  doneCoverMin: 0.5,
+  doneCoverMin: 2.5,
   doneClaimsMin: 0.5,
   doneLeftoverMax: 0.9,
   doneDiffMaxChars: 60000,

@@ -9,7 +9,7 @@ feature depends on another.
 | --- | --- | --- | --- |
 | Bash guard | `PreToolUse` on `Bash` | Claude Code's own read-only set runs without asking Jev; everything else is judged once against eight harm categories. Over a threshold: deny. All low: allow, which in auto mode skips the classifier. In between: silent, Claude Code decides. In bypass mode, Jev unreachable means deny. | on |
 | File guard | `PreToolUse` on `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Read` | Writes inside the repo or scratchpad are free. A write outside gets one Jev call: does it change shell, git, ssh, Claude or system configuration, or another project. A read of a credential path (`.env`, `~/.ssh`, `*.pem`, …) is refused with no model call. | on |
-| Done-check | `Stop` | Before Claude hands back, checks that the diff covers the request and the final message does not overclaim. Blocks with the reason, at most 2 times per turn. | on |
+| Done-check | `Stop` | Before Claude hands back, Jev rates how much of the request the diff implements (none, a small part, most, all) and checks the final message does not overclaim. Below "all" it blocks, naming the rung, at most 2 times per turn. | on |
 | Subagent gate | `PreToolUse` on `Agent` | Denies a subagent spawn when the answer is already in the recent conversation. | on |
 | Verbatim compaction | `session.compact` function hook (early access) | Replaces the compaction summary with the original messages, long tool outputs truncated. Never rewrites text, never drops a call. One Jev call ranks which outputs to restore verbatim: a Choice over the candidates; anything with a tenth of the probability mass, up to five, is restored. Triggers at 60% context. | on |
 
@@ -149,7 +149,7 @@ From a running session with the plugin loaded: `/plugin-types types`. Regenerate
   diff, or output heads. Never full tool outputs during compaction. Segments from
   the local splitter are never sent; Jev gets the command as written.
 - Thresholds are per category by damage: 0.5 for irreversible local loss, 0.6–0.7
-  for the rest, 0.95 for the subagent gate, 0.5 to block a stop.
+  for the rest, 0.95 for the subagent gate, coverage under 2.5 of 3 to block a stop.
 - Compaction never drops a tool call. Edit and Write results, the first message, and
   the newest N messages are pinned. Truncated outputs carry a note telling the model
   to re-run the tool if needed.

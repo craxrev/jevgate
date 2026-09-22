@@ -171,10 +171,10 @@ async function probeDone() {
   for (const c of cases) {
     const t0 = Date.now();
     const res = await ask(fetchLike, opts, c.state, done.QUESTIONS);
-    const d = done.decide(res, { coverMin: 0.5, claimsMin: 0.5, leftoverMax: 0.9 });
+    const d = done.decide(res, { coverMin: 2.5, claimsMin: 0.5, leftoverMax: 0.9 });
     const s = d.scores;
     console.log(
-      `${c.expect.padEnd(6)} ${d.action.padEnd(6)} covers ${fmt(s.covers!)} claims ${fmt(s.claims_backed!)} leftovers ${fmt(s.leftovers!)} asks ${fmt(s.asks_user!)}  ${c.name} (${Date.now() - t0}ms)${d.action === c.expect ? '' : '   <-- MISMATCH'}`,
+      `${c.expect.padEnd(6)} ${d.action.padEnd(6)} coverage ${fmt(s.coverage!)}/3 claims ${fmt(s.claims_backed!)} leftovers ${fmt(s.leftovers!)} asks ${fmt(s.asks_user!)}  ${c.name} (${Date.now() - t0}ms)${d.action === c.expect ? '' : '   <-- MISMATCH'}`,
     );
   }
 }

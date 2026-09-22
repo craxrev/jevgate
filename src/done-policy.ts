@@ -1,5 +1,5 @@
 import type { Questions, JevResponse } from './jev.ts';
-import { noul } from './jev.ts';
+import { noul, score } from './jev.ts';
 
 export type DoneState = {
   request_first?: string;
@@ -10,14 +10,16 @@ export type DoneState = {
 };
 
 export const QUESTIONS: Questions = {
-  covers: {
-    type: 'noul',
+  coverage: {
+    type: 'score',
     instructions:
-      'The changes in `diff` implement everything `request_latest` asked for. If `request_latest` was a question, a discussion, or asked only for analysis or a plan with no code change, answer true.',
-    criteria: {
-      true: 'Nothing the request asked for is missing from the diff.',
-      false: 'A requested change, file, test, or behavior is absent from the diff.',
-    },
+      'How much of what `request_latest` asked for do the changes in `diff` implement? If `request_latest` was a question, a discussion, or asked only for analysis or a plan with no code change, answer the top level.',
+    criteria: [
+      'none: the diff does not address the request, or there is no relevant change',
+      'a small part: one piece of what was asked is there, most is missing',
+      'most: the main change is there but something asked for is still missing (a test, a file, a case, a behavior)',
+      'all: nothing the request asked for is missing from the diff',
+    ],
   },
   claims_backed: {
     type: 'noul',
@@ -48,7 +50,15 @@ export const QUESTIONS: Questions = {
   },
 };
 
+/** `coverMin` is on the coverage ladder, 0 none … 3 all. */
 export type Thresholds = { coverMin: number; claimsMin: number; leftoverMax: number };
+
+/** What each rung of the coverage ladder means, for the block reason. */
+export function coverageWords(level: number): string {
+  if (level < 0.75) return 'the diff does not address the request';
+  if (level < 1.75) return 'only a small part of the request is in the diff';
+  return 'the main change is there, but something the request asked for is still missing (a test, a file, a case, a behavior)';
+}
 
 export type DoneDecision =
   | { action: 'allow'; reason: string; scores: Record<string, number> }
@@ -56,7 +66,7 @@ export type DoneDecision =
 
 export function decide(res: JevResponse, t: Thresholds): DoneDecision {
   const scores = {
-    covers: noul(res, 'covers'),
+    coverage: score(res, 'coverage'),
     claims_backed: noul(res, 'claims_backed'),
     leftovers: noul(res, 'leftovers'),
     asks_user: noul(res, 'asks_user'),
@@ -65,8 +75,8 @@ export function decide(res: JevResponse, t: Thresholds): DoneDecision {
     return { action: 'allow', reason: 'final message asks the user', scores };
   }
   const problems: string[] = [];
-  if (scores.covers < t.coverMin) {
-    problems.push(`the diff does not appear to cover the request (p=${scores.covers.toFixed(2)})`);
+  if (scores.coverage < t.coverMin) {
+    problems.push(`${coverageWords(scores.coverage)} (coverage ${scores.coverage.toFixed(1)} of 3)`);
   }
   if (scores.claims_backed < t.claimsMin) {
     problems.push(`the final message claims work not visible in the diff (p=${scores.claims_backed.toFixed(2)})`);

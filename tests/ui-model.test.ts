@@ -61,7 +61,7 @@ test('bashStats per session and all-time, with denied categories and mean latenc
   assert.equal(all.agentDenies, 1);
   assert.equal(latestSession(entries), 's2');
   const text = formatStats(s1, all, 's1');
-  assert.match(text, /^jevgate bash guard\nsession   free     1 \( 20%\)  ok     2 \(allow 1\)  denied    1  unreachable   1  avg 507ms/);
+  assert.match(text, /^jevgate guard \(bash \+ file tools\)\nsession   free     1 \( 20%\)  ok     2 \(allow 1\)  denied    1  unreachable   1  avg 507ms/);
   assert.match(text, /all-time  free     2/);
   assert.match(text, /denied by category \(all-time\): exfiltrates 1/);
 });

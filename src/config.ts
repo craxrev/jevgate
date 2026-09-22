@@ -20,6 +20,10 @@ export type Config = {
   bashDenySystem: number;
   bashDenyExceeds: number;
 
+  fileEnabled: boolean;
+  fileDenySystem: number;
+  fileDenyExceeds: number;
+
   doneEnabled: boolean;
   doneMaxBlocks: number;
   doneCoverMin: number;
@@ -56,6 +60,10 @@ export const DEFAULTS: Config = {
   bashDenySecrets: 0.6,
   bashDenySystem: 0.7,
   bashDenyExceeds: 0,
+
+  fileEnabled: true,
+  fileDenySystem: 0.6,
+  fileDenyExceeds: 0,
 
   doneEnabled: true,
   doneMaxBlocks: 2,
@@ -119,6 +127,10 @@ export function fromRaw(raw: Raw): Config {
     bashDenySecrets: num(raw.bashDenySecrets, d.bashDenySecrets),
     bashDenySystem: num(raw.bashDenySystem, d.bashDenySystem),
     bashDenyExceeds: num(raw.bashDenyExceeds, d.bashDenyExceeds),
+
+    fileEnabled: bool(raw.fileEnabled, d.fileEnabled),
+    fileDenySystem: num(raw.fileDenySystem, d.fileDenySystem),
+    fileDenyExceeds: num(raw.fileDenyExceeds, d.fileDenyExceeds),
 
     doneEnabled: bool(raw.doneEnabled, d.doneEnabled),
     doneMaxBlocks: num(raw.doneMaxBlocks, d.doneMaxBlocks),

@@ -2,7 +2,7 @@ import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 export type Decision = {
-  feature: 'bash' | 'done' | 'agent' | 'compact';
+  feature: 'bash' | 'file' | 'done' | 'agent' | 'compact';
   action: string;
   session?: string;
   [k: string]: unknown;

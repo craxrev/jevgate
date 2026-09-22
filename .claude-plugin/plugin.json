@@ -1,7 +1,7 @@
 {
   "name": "jevgate",
-  "version": "0.2.1",
-  "description": "Jev-backed gates for Claude Code: bash guard for bypass mode, done-check, subagent gate, verbatim compaction. Each feature toggles independently.",
+  "version": "0.3.0",
+  "description": "Jev-backed gates for Claude Code: bash guard for bypass mode, file guard, done-check, subagent gate, verbatim compaction. Each feature toggles independently.",
   "license": "MIT",
   "author": {
     "name": "craxrev"
@@ -83,6 +83,24 @@
       "type": "number",
       "title": "Deny: exceeds request",
       "description": "Minimum Jev probability to deny: does something the recent user messages did not ask for. 0 logs the score without denying.. 0 means log only.",
+      "default": 0
+    },
+    "fileEnabled": {
+      "type": "boolean",
+      "title": "File guard",
+      "description": "Edit/Write/Read guard. Writes inside the project are free; a write outside it is judged by Jev; a read of a credential path is refused.",
+      "default": true
+    },
+    "fileDenySystem": {
+      "type": "number",
+      "title": "File guard: deny system or user config",
+      "description": "Minimum Jev probability to deny a write outside the project that changes shell, git, ssh, Claude settings or system configuration. 0 means log only.",
+      "default": 0.6
+    },
+    "fileDenyExceeds": {
+      "type": "number",
+      "title": "File guard: deny exceeds request",
+      "description": "Minimum Jev probability to deny an outside write the recent user messages did not ask for. 0 logs the score without denying.",
       "default": 0
     },
     "doneEnabled": {

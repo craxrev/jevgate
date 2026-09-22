@@ -2,12 +2,13 @@
 
 Claude Code plugin that uses TypeSafe AI's Jev (a fast, typed judgment model) as the
 guard for `bypassPermissions` mode and to remove latency elsewhere in an agentic
-coding session. Four independent features, each with its own on/off switch. No
+coding session. Five independent features, each with its own on/off switch. No
 feature depends on another.
 
 | Feature | Hook | What it does | Default |
 | --- | --- | --- | --- |
 | Bash guard | `PreToolUse` on `Bash` | Claude Code's own read-only set runs without asking Jev; everything else is judged once against eight harm categories. Over a threshold: deny. All low: allow, which in auto mode skips the classifier. In between: silent, Claude Code decides. In bypass mode, Jev unreachable means deny. | on |
+| File guard | `PreToolUse` on `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Read` | Writes inside the repo or scratchpad are free. A write outside gets one Jev call: does it change shell, git, ssh, Claude or system configuration, or another project. A read of a credential path (`.env`, `~/.ssh`, `*.pem`, …) is refused with no model call. | on |
 | Done-check | `Stop` | Before Claude hands back, checks that the diff covers the request and the final message does not overclaim. Blocks with the reason, at most 2 times per turn. | on |
 | Subagent gate | `PreToolUse` on `Agent` | Denies a subagent spawn when the answer is already in the recent conversation. | on |
 | Verbatim compaction | `session.compact` function hook (early access) | Replaces the compaction summary with the original messages, long tool outputs truncated. Never rewrites text, never drops a call. Jev ranks which outputs to restore verbatim. Triggers at 60% context. | on |
@@ -101,6 +102,23 @@ take 300–1000ms.
 Switching to bypass mode: `permissions.defaultMode: "bypassPermissions"` in
 settings, or `claude --dangerously-skip-permissions`. Once the guard is live,
 `permissions.deny` can be emptied.
+
+## The file guard
+
+Same idea for Edit/Write/MultiEdit/NotebookEdit/Read, where the path says most
+of it, so almost every call costs nothing:
+
+| Call | Decided by | Outcome |
+| --- | --- | --- |
+| write inside `repo_root` (or `cwd` without a repo) or a scratchpad | local | free, silent |
+| write outside | one Jev call, two questions | `changes_system_or_user_config` ≥ 0.6 → deny (rc files, `~/.ssh`, `~/.claude/settings*`, `~/Library/LaunchAgents`, `/etc`, another project). `exceeds_request` log-only. Skill, agent and command files under `~/.claude`, notes and documents pass. |
+| read of a credential path | local | deny, `reads_secrets` |
+| any other read | local | silent, not logged |
+
+Jev unreachable follows the Bash rule: deny in bypass mode, silent elsewhere.
+Options: `fileEnabled`, `fileDenySystem`, `fileDenyExceeds`. In auto mode Claude
+Code already sends outside writes to its classifier; the guard matters in bypass
+mode, and for secret reads in every mode.
 
 ## Test
 

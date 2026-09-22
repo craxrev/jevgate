@@ -112,7 +112,7 @@
   <header>
     <span class="eyebrow">Claude Code plugin</span>
     <h1>jevgate</h1>
-    <p class="lede">A small plugin that asks Jev, a fast yes/no model, the questions Claude Code would otherwise spend seconds on or skip entirely. It guards shell commands when permissions are off, and trims waits elsewhere. Four features, each with its own switch.</p>
+    <p class="lede">A small plugin that asks Jev, a fast yes/no model, the questions Claude Code would otherwise spend seconds on or skip entirely. It guards shell commands when permissions are off, and trims waits elsewhere. Five features, each with its own switch.</p>
   </header>
 
   <section>
@@ -133,7 +133,7 @@
   </section>
 
   <section>
-    <h2>The four features</h2>
+    <h2>The five features</h2>
     <div class="features">
 
       <div class="feature">
@@ -143,6 +143,15 @@
           <dt>If yes</dt><dd>Over the category's threshold (50–70%), the command is refused with the reason. Safe commands score under 30%, harmful ones over 80%.</dd>
           <dt>If no</dt><dd>The command runs. About half a second.</dd>
           <dt>Never asked</dt><dd>Claude Code's own read-only set runs free, except paths that hold secrets. Editing a file with a script counts as editing, not destroying.</dd>
+        </dl>
+      </div>
+
+      <div class="feature">
+        <div class="head"><h3>File guard</h3><span class="when">before a file is read or written</span></div>
+        <dl>
+          <dt>Inside the project</dt><dd>Nothing is asked. Almost every edit lands here.</dd>
+          <dt>Outside</dt><dd>One question: does this write change your shell, git, ssh, Claude or system configuration, or another project? Over 60%, refused. Skill files, notes and documents pass.</dd>
+          <dt>Secret paths</dt><dd>Reading <code>.env</code>, <code>~/.ssh</code> or a <code>.pem</code> is refused on the spot, no model needed.</dd>
         </dl>
       </div>
 

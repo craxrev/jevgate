@@ -5,8 +5,10 @@ import { topScores } from './bash-policy.ts';
 
 export type LogEntry = {
   ts: string;
-  feature: 'bash' | 'done' | 'agent' | 'compact';
+  feature: 'bash' | 'file' | 'done' | 'agent' | 'compact';
   action: string;
+  tool?: string;
+  path?: string;
   session?: string;
   tool_use_id?: string;
   reason?: string;
@@ -59,7 +61,7 @@ export function tally(entries: readonly LogEntry[], session: string): Tally {
   const t: Tally = { free: 0, ok: 0, denied: 0, blocks: 0, agentDenies: 0 };
   for (const e of entries) {
     if (e.session !== session) continue;
-    if (e.feature === 'bash') {
+    if (e.feature === 'bash' || e.feature === 'file') {
       if (BASH_FREE.has(e.action)) t.free++;
       else if (BASH_OK.has(e.action)) t.ok++;
       else if (BASH_DENIED.has(e.action)) t.denied++;
@@ -90,8 +92,14 @@ export function statusText(t: Tally, compactions: number): string | undefined {
   return parts.length ? `jev ${parts.join(' · ')}` : undefined;
 }
 
-/** The dim line under a Bash row; undefined keeps the row as the engine drew it (free commands stay silent). */
+/** The dim line under a Bash or file-tool row; undefined keeps the row as the engine drew it (free calls stay silent). */
 export function bashRowText(e: LogEntry): string | undefined {
+  if (e.feature === 'file') {
+    if (e.action === 'denied') return `✗ jevgate denied · ${e.category ?? e.reason ?? ''}${e.category && e.scores ? ` ${(e.scores[e.category] ?? 0).toFixed(2)}` : ''}`;
+    if (e.action === 'ok') return `▸ jevgate ok · outside project · ${e.scores ? topScores(e.scores) : ''} · ${e.ms ?? '?'}ms`;
+    if (e.action === 'unreachable') return `✗ jevgate unreachable · Jev did not answer · ${e.ms ?? '?'}ms`;
+    return undefined;
+  }
   if (e.feature !== 'bash') return undefined;
   if (e.action === 'ok' || e.action === 'allow') return `▸ jevgate ${e.action} · ${e.scores ? topScores(e.scores) : ''} · ${e.ms ?? '?'}ms`;
   if (e.action === 'denied') {
@@ -131,14 +139,15 @@ export function bashStats(entries: readonly LogEntry[], session?: string): BashS
     if (session !== undefined && e.session !== session) continue;
     if (e.feature === 'done' && e.action === 'block') s.blocks++;
     if (e.feature === 'agent' && e.action === 'deny') s.agentDenies++;
-    if (e.feature !== 'bash') continue;
+    if (e.feature !== 'bash' && e.feature !== 'file') continue;
+    if (e.feature === 'file' && e.action === 'free') continue; // in-project writes are not interesting
     if (BASH_FREE.has(e.action)) s.free++;
     else if (BASH_OK.has(e.action)) {
       s.ok++;
       if (e.action === 'allow') s.allowed++;
     } else if (e.action === 'denied') {
       s.denied++;
-      const c = e.category ?? e.reason ?? '?';
+      const c = (e.feature === 'file' ? 'file:' : '') + (e.category ?? e.reason ?? '?');
       cats.set(c, (cats.get(c) ?? 0) + 1);
     } else if (e.action === 'unreachable') s.unreachable++;
     if (typeof e.ms === 'number' && (BASH_OK.has(e.action) || e.action === 'denied')) {
@@ -164,7 +173,7 @@ export function formatStats(session: BashStats, all: BashStats, sessionId?: stri
     const pct = (n: number) => (total ? `${Math.round((100 * n) / total)}%` : '-');
     return `${label.padEnd(9)} free ${String(s.free).padStart(5)} (${pct(s.free).padStart(4)})  ok ${String(s.ok).padStart(5)} (allow ${s.allowed})  denied ${String(s.denied).padStart(4)}  unreachable ${String(s.unreachable).padStart(3)}  avg ${s.avgMs}ms  done-check ✗${s.blocks}  subagent ⇢${s.agentDenies}`;
   };
-  const lines = ['jevgate bash guard', row(`session${sessionId ? '' : '*'}`, session), row('all-time', all)];
+  const lines = ['jevgate guard (bash + file tools)', row(`session${sessionId ? '' : '*'}`, session), row('all-time', all)];
   if (all.categories.length) {
     lines.push('denied by category (all-time): ' + all.categories.map(([c, n]) => `${c} ${n}`).join(', '));
   }

@@ -2,6 +2,7 @@
   "hooks": {
     "PreToolUse": [
       { "matcher": "Bash",  "hooks": [{ "type": "command", "command": "node", "args": ["--no-warnings", "${CLAUDE_PLUGIN_ROOT}/hooks/bash-gate.ts"],  "timeout": 10 }] },
+      { "matcher": "Edit|Write|MultiEdit|NotebookEdit|Read", "hooks": [{ "type": "command", "command": "node", "args": ["--no-warnings", "${CLAUDE_PLUGIN_ROOT}/hooks/file-gate.ts"], "timeout": 10 }] },
       { "matcher": "Agent", "hooks": [{ "type": "command", "command": "node", "args": ["--no-warnings", "${CLAUDE_PLUGIN_ROOT}/hooks/agent-gate.ts"], "timeout": 10 }] }
     ],
     "Stop": [

@@ -192,8 +192,8 @@ export const register: Register = (on: On, options: PluginOptions) => {
     }
   });
 
-  // After each Bash call settles, the gate's log entry exists: tick the footer now, not at turn end.
-  on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
+  // After each guarded call settles, the gate's log entry exists: tick the footer now, not at turn end.
+  on('tool.call', async ($, e, next) => {
     const result = await next(e);
     await refresh($, ui);
     return result;
@@ -222,7 +222,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
     return next({ ...e, props: { ...e.props, modes: [...e.props.modes, ui.footer] } });
   });
 
-  on('ui.render', { component: 'ToolUse', props: { tool: 'Bash' } }, async ($, e, next) => {
+  const decorate = async ($: Host, e: Parameters<Parameters<On>[1]>[1], next: Parameters<Parameters<On>[1]>[2]) => {
     const engineRow = await next(e);
     try {
       if (!rowCache.has(e.requestId)) {
@@ -236,7 +236,10 @@ export const register: Register = (on: On, options: PluginOptions) => {
     } catch {
       return engineRow;
     }
-  });
+  };
+  for (const tool of ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read']) {
+    on('ui.render', { component: 'ToolUse', props: { tool } }, decorate);
+  }
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => {
     const report = compactions[compactions.length - 1];

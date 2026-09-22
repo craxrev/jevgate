@@ -11,7 +11,7 @@
 //
 // Everything UI is best-effort and must never break the hooks it decorates.
 // The validator follows `$` only within this file, so all of it lives here.
-import type { EngineInterface, On, PluginOptions, Register, SessionMessage } from 'claude-code';
+import type { EngineInterface, On, PluginOptions, Register, RenderElement, SessionMessage } from 'claude-code';
 import { fromRaw, type Config } from '../src/config.ts';
 import { ask, type FetchLike } from '../src/jev.ts';
 import {
@@ -40,6 +40,9 @@ import {
 } from '../src/ui-model.ts';
 
 type Host = EngineInterface;
+
+/** `h` is the loosely typed JSX factory; a render hook must hand back an element. */
+const el = (...args: Parameters<typeof h>): RenderElement => h(...args) as RenderElement;
 
 const PANE_ID = 'jevgate-compaction';
 const STATS_PANE_ID = 'jevgate-stats';
@@ -271,7 +274,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
     if (!s) return next(e);
     const { Box, Text } = $.ui.resolve(e);
     const lines = statsLines({ session: s.session, all: s.all, width: e.props.bodyColumns - 2, entries: s.entries });
-    return h(
+    return el(
       Box,
       { flexDirection: 'column', width: e.props.bodyColumns, paddingX: 1 },
       ...lines.map((l) => h(Text, { color: l.color, dimColor: l.dim, bold: l.bold, wrap: 'truncate-end' }, l.text || ' ')),
@@ -319,7 +322,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
       const line = rowCache.get(e.requestId);
       if (!line) return engineRow;
       const { Box, Text } = $.ui.resolve(e);
-      return h(Box, { flexDirection: 'column' }, engineRow, h(Text, { dimColor: true, wrap: 'wrap' }, `  ${line}`));
+      return el(Box, { flexDirection: 'column' }, engineRow, h(Text, { dimColor: true, wrap: 'wrap' }, `  ${line}`));
     } catch {
       return engineRow;
     }
@@ -341,7 +344,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
         }  ${r.input}`,
       ),
     );
-    return h(
+    return el(
       Box,
       { flexDirection: 'column', width: e.props.bodyColumns, paddingX: 1 },
       h(

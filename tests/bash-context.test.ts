@@ -66,7 +66,7 @@ test('recent turns: last n of both roles, oldest first, reminders skipped, long 
   );
   assert.deepEqual(recentTurns(p, 2), [{ role: 'assistant', text: 'x'.repeat(1500) + ' […]' }, { role: 'user', text: 'third ask' }]);
   assert.deepEqual(
-    recentTurns(p, 10).map((t) => `${t.role}: ${t.text.slice(0, 16)}`),
+    recentTurns(p, 10)!.map((t) => `${t.role}: ${t.text.slice(0, 16)}`),
     ['user: first ask', 'assistant: Done. Commit it?', 'user: yes, commit it', 'assistant: xxxxxxxxxxxxxxxx', 'user: third ask'],
   );
   assert.equal(recentTurns(p, 0), undefined);

@@ -8,6 +8,10 @@
   "engines": {
     "node": ">=22.18"
   },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "typescript": "^5.9.3"
+  },
   "scripts": {
     "test": "node --no-warnings --test 'tests/*.test.ts'",
     "probe": "node --no-warnings scripts/probe.ts",

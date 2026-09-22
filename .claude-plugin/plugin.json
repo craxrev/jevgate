@@ -1,6 +1,6 @@
 {
   "name": "jevgate",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Jev-backed gates for Claude Code: bash guard for bypass mode, done-check, subagent gate, verbatim compaction. Each feature toggles independently.",
   "license": "MIT",
   "author": {
@@ -30,6 +30,12 @@
       "title": "Bash guard: recent messages",
       "description": "How many of the latest user messages Jev sees when judging a command.",
       "default": 5
+    },
+    "bashAllowMax": {
+      "type": "number",
+      "title": "Bash guard: allow ceiling",
+      "description": "When every deny category scores under this, the hook answers allow and auto mode skips its classifier. 0 disables the allow path (deny only).",
+      "default": 0.3
     },
     "bashDenyDestroy": {
       "type": "number",

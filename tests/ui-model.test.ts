@@ -10,6 +10,7 @@ const scores = (over: Record<string, number>) => ({
 const log = [
   { ts: 't', feature: 'bash', action: 'free', session: 's1', tool_use_id: 'a', command: 'git status' },
   { ts: 't', feature: 'bash', action: 'ok', session: 's1', tool_use_id: 'b', scores: scores({ reads_secrets: 0.13 }), ms: 340 },
+  { ts: 't', feature: 'bash', action: 'allow', session: 's1', tool_use_id: 'g', scores: scores({ reads_secrets: 0.11 }), ms: 300 },
   { ts: 't', feature: 'bash', action: 'denied', session: 's1', tool_use_id: 'c', category: 'exfiltrates', reason: 'jevgate: denied, exfiltrates 0.98 (threshold 0.60)', scores: scores({ exfiltrates: 0.98, reads_secrets: 0.95 }), ms: 880 },
   { ts: 't', feature: 'bash', action: 'unreachable', session: 's1', tool_use_id: 'd', error: 'Jev HTTP 401', ms: 830 },
   { ts: 't', feature: 'bash', action: 'fast-lane', session: 's0', tool_use_id: 'e', scores: { read_only: 0.97, dev_task: 0.02, unsafe: 0.02 }, ms: 300 },
@@ -21,11 +22,11 @@ const log = [
   .join('\n');
 
 test('parseLog skips junk lines', () => {
-  assert.equal(parseLog('garbage\n' + log + '\n{bad').length, 8);
+  assert.equal(parseLog('garbage\n' + log + '\n{bad').length, 9);
 });
 
 test('tally counts per session; free is counted apart, unreachable is a deny, old names fold into ok', () => {
-  assert.deepEqual(tally(parseLog(log), 's1'), { free: 1, ok: 1, denied: 2, blocks: 1, agentDenies: 0 });
+  assert.deepEqual(tally(parseLog(log), 's1'), { free: 1, ok: 2, denied: 2, blocks: 1, agentDenies: 0 });
   assert.deepEqual(tally(parseLog(log), 's0'), { free: 1, ok: 1, denied: 0, blocks: 0, agentDenies: 0 });
   assert.equal(tally(parseLog(log), 's2').agentDenies, 1);
 });
@@ -41,9 +42,10 @@ test('footerLabel is the short form; free commands do not show', () => {
 });
 
 test('bashRowText: ok shows the top two scores, denied the category and score, free nothing', () => {
-  const [free, ok, denied, unreachable, legacy] = parseLog(log);
+  const [free, ok, allow, denied, unreachable, legacy] = parseLog(log);
   assert.equal(bashRowText(free!), undefined);
   assert.equal(bashRowText(ok!), '▸ jevgate ok · reads_secrets 0.13, exceeds_request 0.10 · 340ms');
+  assert.equal(bashRowText(allow!), '▸ jevgate allow · reads_secrets 0.11, exceeds_request 0.10 · 300ms');
   assert.equal(bashRowText(denied!), '✗ jevgate denied · exfiltrates 0.98');
   assert.match(bashRowText(unreachable!)!, /unreachable.*830ms/);
   assert.equal(bashRowText(legacy!), undefined);
@@ -52,14 +54,14 @@ test('bashRowText: ok shows the top two scores, denied the category and score, f
 test('bashStats per session and all-time, with denied categories and mean latency', () => {
   const entries = parseLog(log);
   const s1 = bashStats(entries, 's1');
-  assert.deepEqual(s1, { free: 1, ok: 1, denied: 1, unreachable: 1, categories: [['exfiltrates', 1]], avgMs: 610, blocks: 1, agentDenies: 0 });
+  assert.deepEqual(s1, { free: 1, ok: 2, allowed: 1, denied: 1, unreachable: 1, categories: [['exfiltrates', 1]], avgMs: 507, blocks: 1, agentDenies: 0 });
   const all = bashStats(entries);
   assert.equal(all.free, 2);
-  assert.equal(all.ok, 2);
+  assert.equal(all.ok, 3);
   assert.equal(all.agentDenies, 1);
   assert.equal(latestSession(entries), 's2');
   const text = formatStats(s1, all, 's1');
-  assert.match(text, /^jevgate bash guard\nsession   free     1 \( 25%\)  ok     1  denied    1  unreachable   1  avg 610ms/);
+  assert.match(text, /^jevgate bash guard\nsession   free     1 \( 20%\)  ok     2 \(allow 1\)  denied    1  unreachable   1  avg 507ms/);
   assert.match(text, /all-time  free     2/);
   assert.match(text, /denied by category \(all-time\): exfiltrates 1/);
 });

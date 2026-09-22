@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CATEGORIES, DEFAULT_THRESHOLDS, QUESTIONS, decide, denyOutput, needsGitStatus, topScores, type Category } from '../src/bash-policy.ts';
+import { CATEGORIES, DEFAULT_THRESHOLDS, DEFAULT_ALLOW_MAX, QUESTIONS, decide, denyOutput, allowOutput, failsClosed, needsGitStatus, topScores, type Category } from '../src/bash-policy.ts';
 import { parseShell } from '../src/shell.ts';
 import { fromRaw, bashThresholds, DEFAULTS } from '../src/config.ts';
 import type { JevResponse } from '../src/jev.ts';
@@ -25,10 +25,29 @@ test('one noul question per category, all naming the state fields', () => {
   assert.match(QUESTIONS.exfiltrates!.instructions, /`remotes`/);
 });
 
-test('decide is ok when every score is under its threshold', () => {
+test('decide is silent (ok) between the allow ceiling and the deny thresholds', () => {
   const d = decide(res({ exfiltrates: 0.59, reads_secrets: 0.3, destroys_uncommitted_work: 0.49 }), DEFAULT_THRESHOLDS);
   assert.equal(d.action, 'ok');
   assert.equal(d.scores.exfiltrates, 0.59);
+  assert.equal(decide(res({ reads_secrets: 0.3 }), DEFAULT_THRESHOLDS).action, 'ok'); // exactly at the ceiling is not under it
+});
+
+test('decide allows when every deny category is under the ceiling; exceeds_request is ignored while log-only', () => {
+  const d = decide(res({ reads_secrets: 0.29, exceeds_request: 0.95 }), DEFAULT_THRESHOLDS);
+  assert.equal(d.action, 'allow');
+  if (d.action === 'allow') assert.equal(d.reason, 'jevgate: harmless, exceeds_request 0.95, reads_secrets 0.29 (ceiling 0.30)');
+  assert.equal(DEFAULT_ALLOW_MAX, 0.3);
+  assert.equal(decide(res({}), DEFAULT_THRESHOLDS, 0).action, 'ok'); // 0 disables the allow path
+  assert.equal(decide(res({ reads_secrets: 0.29 }), DEFAULT_THRESHOLDS, 0.2).action, 'ok');
+  assert.equal(decide(res({ exceeds_request: 0.95 }), { ...DEFAULT_THRESHOLDS, exceeds_request: 0.9 }).action, 'deny');
+});
+
+test('failsClosed only in modes with no review behind the hook', () => {
+  assert.equal(failsClosed('bypassPermissions'), true);
+  assert.equal(failsClosed(undefined), true);
+  assert.equal(failsClosed('auto'), false);
+  assert.equal(failsClosed('default'), false);
+  assert.equal(failsClosed('acceptEdits'), false);
 });
 
 test('decide denies at the threshold and names the category and score', () => {
@@ -50,7 +69,7 @@ test('decide picks the category furthest over its threshold', () => {
 
 test('a threshold of 0 is log-only: exceeds_request never denies by default', () => {
   const d = decide(res({ exceeds_request: 0.99 }), DEFAULT_THRESHOLDS);
-  assert.equal(d.action, 'ok');
+  assert.notEqual(d.action, 'deny');
   assert.equal(d.scores.exceeds_request, 0.99);
   const strict = decide(res({ exceeds_request: 0.99 }), { ...DEFAULT_THRESHOLDS, exceeds_request: 0.9 });
   assert.equal(strict.action, 'deny');
@@ -70,6 +89,8 @@ test('config maps per-category options onto thresholds, defaults match the polic
   assert.equal(t.exceeds_request, 0.7);
   assert.equal(t.reads_secrets, 0.6);
   assert.equal(cfg.bashRecentMessages, 5);
+  assert.equal(cfg.bashAllowMax, 0.3);
+  assert.equal(fromRaw({ bashAllowMax: '0' }).bashAllowMax, 0);
 });
 
 test('needsGitStatus for git, file writers, redirects and inline scripts only', () => {
@@ -83,6 +104,12 @@ test('needsGitStatus for git, file writers, redirects and inline scripts only', 
 
 test('topScores lists the highest two', () => {
   assert.equal(topScores({ a: 0.1, b: 0.9, c: 0.5 }), 'b 0.90, c 0.50');
+});
+
+test('allowOutput matches the PreToolUse contract', () => {
+  const o = allowOutput('r');
+  assert.equal(o.hookSpecificOutput.permissionDecision, 'allow');
+  assert.equal(o.hookSpecificOutput.permissionDecisionReason, 'r');
 });
 
 test('denyOutput matches the PreToolUse contract', () => {

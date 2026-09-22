@@ -126,10 +126,10 @@
     <div class="flow">
       <div class="step"><span class="n">1</span><div><div class="t">Free set</div><div class="d">Read-only commands from Claude Code's own list (<code>git status</code>, <code>ls</code>, <code>grep</code>, <code>cat</code>…) run at once. About a quarter of all calls. Nothing is sent anywhere.</div></div></div>
       <div class="step ours"><span class="n">2</span><div><div class="t">jevgate asks Jev</div><div class="d">The command as written, plus the repo root, remotes, uncommitted changes and your last few messages. Eight harm questions, one call.</div></div></div>
-      <div class="step ours"><span class="n">3</span><div><div class="t">Over a threshold? Denied.</div><div class="d">Claude sees the category and score, and finds another way or asks you. Otherwise the command runs.</div></div></div>
-      <div class="step"><span class="n">4</span><div><div class="t">Jev unreachable? Denied too.</div><div class="d">Nothing runs unjudged. <span class="slow">Switch to auto mode</span> while Jev is down; free commands keep working.</div></div></div>
+      <div class="step ours"><span class="n">3</span><div><div class="t">Over a threshold? Denied. All low? Allowed.</div><div class="d">A denial tells Claude the category and score, so it finds another way or asks you. An allow runs the command. In between, jevgate says nothing and Claude Code decides.</div></div></div>
+      <div class="step"><span class="n">4</span><div><div class="t">Jev unreachable? Denied, in bypass mode.</div><div class="d">Nothing runs unjudged there. <span class="slow">Switch to auto mode</span> while Jev is down: there jevgate steps aside and Claude Code's own review takes over. Free commands keep working.</div></div></div>
     </div>
-    <p>A hook deny is honored in every mode, so the same guard is a hard floor under auto mode as well.</p>
+    <p>In auto mode the same answers cut waiting: an allow skips the classifier, a deny skips it too, and only the in-between commands reach it, about one in ten instead of three in four. Your deny and ask rules still apply on top.</p>
   </section>
 
   <section>
@@ -201,7 +201,7 @@
   <section>
     <h2>Good to know</h2>
     <div class="notes">
-      <div class="note"><h3>The guard fails closed, the rest fail quiet</h3><p>If Jev is down or slow, shell commands outside the free set are refused until it answers again; every other feature does nothing and Claude Code behaves as before.</p></div>
+      <div class="note"><h3>Fails closed only where it must</h3><p>If Jev is down or slow in bypass mode, shell commands outside the free set are refused until it answers again. In every other mode, and for every other feature, jevgate does nothing and Claude Code behaves as before.</p></div>
       <div class="note"><h3>Each switch is separate</h3><p>Turn any feature off in the plugin config. None depends on another.</p></div>
       <div class="note"><h3>Everything is logged</h3><p>Every decision with its scores goes to <span class="mono">decisions.jsonl</span> in the plugin data folder. Tune thresholds from there.</p></div>
       <div class="note"><h3>What leaves your machine</h3><p>Command text, the diff, recent messages, and the first 300 characters of old tool outputs go to TypeSafe. Never full outputs during compaction.</p></div>

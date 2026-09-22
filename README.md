@@ -7,7 +7,7 @@ feature depends on another.
 
 | Feature | Hook | What it does | Default |
 | --- | --- | --- | --- |
-| Bash guard | `PreToolUse` on `Bash` | Denies harmful shell commands. Claude Code's own read-only set runs without asking Jev; everything else is judged once against eight harm categories. Fails closed: if Jev cannot answer, the command is refused. | on |
+| Bash guard | `PreToolUse` on `Bash` | Claude Code's own read-only set runs without asking Jev; everything else is judged once against eight harm categories. Over a threshold: deny. All low: allow, which in auto mode skips the classifier. In between: silent, Claude Code decides. In bypass mode, Jev unreachable means deny. | on |
 | Done-check | `Stop` | Before Claude hands back, checks that the diff covers the request and the final message does not overclaim. Blocks with the reason, at most 2 times per turn. | on |
 | Subagent gate | `PreToolUse` on `Agent` | Denies a subagent spawn when the answer is already in the recent conversation. | on |
 | Verbatim compaction | `session.compact` function hook (early access) | Replaces the compaction summary with the original messages, long tool outputs truncated. Never rewrites text, never drops a call. Jev ranks which outputs to restore verbatim. Triggers at 60% context. | on |
@@ -68,13 +68,28 @@ For each `Bash` call:
    | `escalates_or_system` | 0.7 | `sudo`, `launchctl`, `crontab`, rc files, killing unrelated processes, global installs |
    | `exceeds_request` | log only | does something the recent user messages did not ask for |
 
-   The highest category over its threshold denies, with
-   `permissionDecisionReason` naming it and the score. Otherwise the command runs,
-   logged as `ok` with all scores. Thresholds are plugin options (`bashDeny*`); 0
-   means log only.
-4. **Fail closed.** Jev unreachable, a timeout, a malformed answer, or a hook bug
-   → deny with `jevgate: Jev unreachable, refusing to run unguarded. Switch to auto
-   mode (Shift+Tab) or retry.` Free commands still run. No API key → deny too.
+   The category furthest over its threshold denies, with
+   `permissionDecisionReason` naming it and the score. When every deny category
+   scores under the allow ceiling (`bashAllowMax`, default 0.3) the hook answers
+   `allow`, logged `allow`. Between the two the hook is silent, logged `ok`.
+   Thresholds are plugin options (`bashDeny*`); 0 means log only.
+4. **Jev unreachable** (timeout, error, malformed answer, no API key): in bypass
+   mode → deny with `jevgate: Jev unreachable, refusing to run unguarded. Switch
+   to auto mode (Shift+Tab) or retry.`, because nothing else would judge. In auto
+   and default modes → silent, Claude Code's own flow takes over. Free commands
+   always run.
+
+What each answer means per mode:
+
+| Hook answer | Bypass mode | Auto mode |
+| --- | --- | --- |
+| deny | refused | refused |
+| allow | runs | runs; your `permissions.deny`/`ask` rules still apply; classifier skipped |
+| silent | runs | Claude Code's rules, then the classifier |
+
+On the corpus, 76% of judged commands stay under 0.2 on every deny category and
+89% under 0.3, so in auto mode the classifier sees roughly one command in ten
+instead of three in four.
 
 Measured on 47 hand-written cases: safe commands score at most 0.28 on any deny
 category, harmful ones at least 0.82. On 187 real commands from 105 sessions, 21
@@ -118,5 +133,6 @@ From a running session with the plugin loaded: `/plugin-types types`. Regenerate
 - Compaction never drops a tool call. Edit and Write results, the first message, and
   the newest N messages are pinned. Truncated outputs carry a note telling the model
   to re-run the tool if needed.
-- The bash guard fails closed. Every other hook fails silent: any error means the
-  stock Claude Code behavior.
+- The bash guard fails closed in bypass mode only, where a silent hook would mean
+  an unjudged command. Everywhere else every hook fails silent: any error means
+  the stock Claude Code behavior.

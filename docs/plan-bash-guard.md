@@ -6,6 +6,10 @@ context in `src/bash-context.ts`. Final thresholds: 0.5 / 0.5 / 0.5 / 0.6 / 0.6 
 0.6 / 0.7 (system raised after a 0.67 false positive) / log-only. Step 7 is the
 user's. See README for the measured results.
 
+0.2.1: the hook also answers `allow` when every deny category is under
+`bashAllowMax` (0.3), so auto mode skips its classifier; Jev unreachable denies
+only in bypass mode (`permission_mode` from the hook input), silent elsewhere.
+
 ## Decision
 
 The user will run Claude Code in `bypassPermissions` mode. There is no

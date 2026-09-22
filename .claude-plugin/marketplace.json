@@ -7,7 +7,7 @@
       "name": "jevgate",
       "source": "./",
       "description": "Jev-backed gates for Claude Code: bash guard for bypass mode, done-check, subagent gate, verbatim compaction.",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "license": "MIT"
     }
   ]

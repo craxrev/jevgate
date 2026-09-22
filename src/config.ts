@@ -8,6 +8,8 @@ export type Config = {
 
   bashEnabled: boolean;
   bashRecentMessages: number;
+  /** Allow (skip the classifier) when every deny category scores under this; 0 disables. */
+  bashAllowMax: number;
   /** Deny thresholds per harm category; 0 means log only. */
   bashDenyDestroy: number;
   bashDenyDeleteOutside: number;
@@ -45,6 +47,7 @@ export const DEFAULTS: Config = {
 
   bashEnabled: true,
   bashRecentMessages: 5,
+  bashAllowMax: 0.3,
   bashDenyDestroy: 0.5,
   bashDenyDeleteOutside: 0.5,
   bashDenyHistory: 0.5,
@@ -107,6 +110,7 @@ export function fromRaw(raw: Raw): Config {
 
     bashEnabled: bool(raw.bashEnabled, d.bashEnabled),
     bashRecentMessages: num(raw.bashRecentMessages, d.bashRecentMessages),
+    bashAllowMax: num(raw.bashAllowMax, d.bashAllowMax),
     bashDenyDestroy: num(raw.bashDenyDestroy, d.bashDenyDestroy),
     bashDenyDeleteOutside: num(raw.bashDenyDeleteOutside, d.bashDenyDeleteOutside),
     bashDenyHistory: num(raw.bashDenyHistory, d.bashDenyHistory),

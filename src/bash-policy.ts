@@ -148,12 +148,20 @@ export const QUESTIONS: Questions = {
   },
 };
 
+/** Default ceiling under which every deny category must stay for an `allow`. */
+export const DEFAULT_ALLOW_MAX = 0.3;
+
 export type BashDecision =
   | { action: 'deny'; category: Category; reason: string; scores: Record<Category, number> }
+  | { action: 'allow'; reason: string; scores: Record<Category, number> }
   | { action: 'ok'; scores: Record<Category, number> };
 
-/** Deny on the highest-scoring category that reached its threshold; thresholds of 0 never deny. */
-export function decide(res: JevResponse, t: BashThresholds): BashDecision {
+/**
+ * Deny on the category furthest over its threshold (thresholds of 0 never deny).
+ * Allow when every deny category is under `allowMax` (0 disables), which in auto
+ * mode skips the classifier. Otherwise `ok`: silent, Claude Code decides.
+ */
+export function decide(res: JevResponse, t: BashThresholds, allowMax = DEFAULT_ALLOW_MAX): BashDecision {
   const scores = {} as Record<Category, number>;
   for (const c of CATEGORIES) scores[c] = noul(res, c);
   let worst: Category | undefined;
@@ -161,13 +169,19 @@ export function decide(res: JevResponse, t: BashThresholds): BashDecision {
     if (t[c] <= 0 || scores[c] < t[c]) continue;
     if (worst === undefined || scores[c] - t[c] > scores[worst] - t[worst]) worst = c;
   }
-  if (worst === undefined) return { action: 'ok', scores };
-  return {
-    action: 'deny',
-    category: worst,
-    reason: `jevgate: denied, ${worst} ${scores[worst].toFixed(2)} (threshold ${t[worst].toFixed(2)})`,
-    scores,
-  };
+  if (worst !== undefined) {
+    return {
+      action: 'deny',
+      category: worst,
+      reason: `jevgate: denied, ${worst} ${scores[worst].toFixed(2)} (threshold ${t[worst].toFixed(2)})`,
+      scores,
+    };
+  }
+  const denyCategories = CATEGORIES.filter((c) => t[c] > 0);
+  if (allowMax > 0 && denyCategories.every((c) => scores[c] < allowMax)) {
+    return { action: 'allow', reason: `jevgate: harmless, ${topScores(scores)} (ceiling ${allowMax.toFixed(2)})`, scores };
+  }
+  return { action: 'ok', scores };
 }
 
 /** The two highest scores, for the row line and logs: `exfiltrates 0.12, reads_secrets 0.08`. */
@@ -177,6 +191,16 @@ export function topScores(scores: Record<string, number>, n = 2): string {
     .slice(0, n)
     .map(([k, v]) => `${k} ${v.toFixed(2)}`)
     .join(', ');
+}
+
+export function allowOutput(reason: string) {
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'allow',
+      permissionDecisionReason: reason,
+    },
+  };
 }
 
 export function denyOutput(reason: string) {
@@ -189,6 +213,11 @@ export function denyOutput(reason: string) {
   };
 }
 
-/** Jev unreachable: the guard cannot judge, so nothing unjudged runs. */
+/** Jev unreachable in bypass mode: the guard cannot judge, so nothing unjudged runs. */
 export const UNREACHABLE_REASON =
   'jevgate: Jev unreachable, refusing to run unguarded. Switch to auto mode (Shift+Tab) or retry.';
+
+/** Modes with no review of their own behind the hook: a silent hook means the command runs. */
+export function failsClosed(permissionMode: string | undefined): boolean {
+  return permissionMode === undefined || permissionMode === 'bypassPermissions' || permissionMode === 'dontAsk';
+}

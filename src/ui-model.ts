@@ -48,9 +48,9 @@ export function parseLog(text: string): LogEntry[] {
   return out;
 }
 
-/** Bash outcomes. `free` is silent and not counted in the footer. Pre-0.2 names are folded into `ok`. */
+/** Bash outcomes. `free` is silent and not counted in the footer. `ok` covers allow and silent alike; pre-0.2 names fold in. */
 export const BASH_FREE = new Set(['free', 'not-asked', 'passthrough']);
-export const BASH_OK = new Set(['ok', 'fast-lane', 'allow', 'unsure', 'pass']);
+export const BASH_OK = new Set(['ok', 'allow', 'fast-lane', 'unsure', 'pass']);
 export const BASH_DENIED = new Set(['denied', 'unreachable']);
 
 export type Tally = { free: number; ok: number; denied: number; blocks: number; agentDenies: number };
@@ -93,12 +93,12 @@ export function statusText(t: Tally, compactions: number): string | undefined {
 /** The dim line under a Bash row; undefined keeps the row as the engine drew it (free commands stay silent). */
 export function bashRowText(e: LogEntry): string | undefined {
   if (e.feature !== 'bash') return undefined;
-  if (e.action === 'ok') return `▸ jevgate ok · ${e.scores ? topScores(e.scores) : ''} · ${e.ms ?? '?'}ms`;
+  if (e.action === 'ok' || e.action === 'allow') return `▸ jevgate ${e.action} · ${e.scores ? topScores(e.scores) : ''} · ${e.ms ?? '?'}ms`;
   if (e.action === 'denied') {
     const score = e.category && e.scores ? ` ${(e.scores[e.category] ?? 0).toFixed(2)}` : '';
     return `✗ jevgate denied · ${e.category ?? e.reason ?? ''}${score}`;
   }
-  if (e.action === 'unreachable') return `✗ jevgate unreachable · Jev did not answer, command refused · ${e.ms ?? '?'}ms`;
+  if (e.action === 'unreachable') return `✗ jevgate unreachable · Jev did not answer · ${e.ms ?? '?'}ms`;
   return undefined;
 }
 
@@ -108,7 +108,10 @@ export function kb(n: number): string {
 
 export type BashStats = {
   free: number;
+  /** Judged and ran, allow and silent together. */
   ok: number;
+  /** Of `ok`, those the hook answered allow (classifier skipped in auto mode). */
+  allowed: number;
   denied: number;
   unreachable: number;
   /** Denied entries per category, most frequent first. */
@@ -120,7 +123,7 @@ export type BashStats = {
 };
 
 export function bashStats(entries: readonly LogEntry[], session?: string): BashStats {
-  const s: BashStats = { free: 0, ok: 0, denied: 0, unreachable: 0, categories: [], avgMs: 0, blocks: 0, agentDenies: 0 };
+  const s: BashStats = { free: 0, ok: 0, allowed: 0, denied: 0, unreachable: 0, categories: [], avgMs: 0, blocks: 0, agentDenies: 0 };
   const cats = new Map<string, number>();
   let msSum = 0;
   let msN = 0;
@@ -130,8 +133,10 @@ export function bashStats(entries: readonly LogEntry[], session?: string): BashS
     if (e.feature === 'agent' && e.action === 'deny') s.agentDenies++;
     if (e.feature !== 'bash') continue;
     if (BASH_FREE.has(e.action)) s.free++;
-    else if (BASH_OK.has(e.action)) s.ok++;
-    else if (e.action === 'denied') {
+    else if (BASH_OK.has(e.action)) {
+      s.ok++;
+      if (e.action === 'allow') s.allowed++;
+    } else if (e.action === 'denied') {
       s.denied++;
       const c = e.category ?? e.reason ?? '?';
       cats.set(c, (cats.get(c) ?? 0) + 1);
@@ -157,7 +162,7 @@ export function formatStats(session: BashStats, all: BashStats, sessionId?: stri
   const row = (label: string, s: BashStats) => {
     const total = s.free + judged(s);
     const pct = (n: number) => (total ? `${Math.round((100 * n) / total)}%` : '-');
-    return `${label.padEnd(9)} free ${String(s.free).padStart(5)} (${pct(s.free).padStart(4)})  ok ${String(s.ok).padStart(5)}  denied ${String(s.denied).padStart(4)}  unreachable ${String(s.unreachable).padStart(3)}  avg ${s.avgMs}ms  done-check ✗${s.blocks}  subagent ⇢${s.agentDenies}`;
+    return `${label.padEnd(9)} free ${String(s.free).padStart(5)} (${pct(s.free).padStart(4)})  ok ${String(s.ok).padStart(5)} (allow ${s.allowed})  denied ${String(s.denied).padStart(4)}  unreachable ${String(s.unreachable).padStart(3)}  avg ${s.avgMs}ms  done-check ✗${s.blocks}  subagent ⇢${s.agentDenies}`;
   };
   const lines = ['jevgate bash guard', row(`session${sessionId ? '' : '*'}`, session), row('all-time', all)];
   if (all.categories.length) {

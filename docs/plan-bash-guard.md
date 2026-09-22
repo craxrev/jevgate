@@ -1,8 +1,10 @@
 # Plan: turn the bash gate into a guard for bypass mode
 
-Status: agreed in conversation on 2026-09-22, not started. Continue in a new
-session opened in this repo (`cd ~/Developer/research/jevgate && claude`), so
-file writes are not reviewed by the auto-mode classifier.
+Status: implemented 2026-09-22 (steps 1–6, version 0.2.0). Splitter in
+`src/shell.ts`, free set in `src/free.ts`, categories in `src/bash-policy.ts`,
+context in `src/bash-context.ts`. Final thresholds: 0.5 / 0.5 / 0.5 / 0.6 / 0.6 /
+0.6 / 0.7 (system raised after a 0.67 false positive) / log-only. Step 7 is the
+user's. See README for the measured results.
 
 ## Decision
 

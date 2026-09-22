@@ -1,18 +1,12 @@
 import json, os, re, sys
 from collections import defaultdict, Counter
 
-ROOT = os.path.expanduser("~/.claude/projects")
-EXCLUDE_PROJECT = "-Users-craxrev-Developer-research-claude-diagnosis"
-EXCLUDE_SESSION = "4bd38508-817b-47f1-b440-585a0a39f23d"
-
-SELECTED = [
-    ("-Users-craxrev-Developer-research-ai-music-player", "630e549c-b2bf-431b-b298-d3ab1193f5aa"),
-    ("-Users-craxrev-Developer-projects-personal-quran-flow", "d1321e37-5930-4ad3-b6e4-ba9ab315613b"),
-    ("-Users-craxrev--config-sketchybar", "50ae1253-019e-4c65-830b-4928ccdd9586"),
-    ("-Users-craxrev-Developer-research-qalam", "242c0ebe-cd56-4fa2-a3a3-64a32e438247"),
-    ("-Users-craxrev-Developer-projects-personal-marsad", "4074367b-58a4-4f7d-910a-3f91ac5192ad"),
-    ("-Users-craxrev-Developer-projects-personal-quran-flow", "5799cefc-96e7-408d-af2d-bc2c7ac77f96"),
-]
+ROOT = os.path.expanduser(os.environ.get("JEVGATE_TRANSCRIPTS", "~/.claude/projects"))
+# Transcript directories or session ids to skip (comma-separated), e.g. the session doing the analysis.
+EXCLUDE_PROJECTS = set(filter(None, os.environ.get("JEVGATE_EXCLUDE_PROJECTS", "").split(",")))
+EXCLUDE_SESSIONS = set(filter(None, os.environ.get("JEVGATE_EXCLUDE_SESSIONS", "").split(",")))
+# Sessions to report on individually, as "project-dir:session-id", comma-separated. Empty: aggregate only.
+SELECTED = [tuple(x.split(":", 1)) for x in filter(None, os.environ.get("JEVGATE_SELECTED", "").split(","))]
 
 FREE_EXEC = set("""ls cat echo pwd head tail grep find wc which diff stat du cd
 sort uniq cut tr basename dirname realpath readlink file tree date whoami uname true test env printenv""".split())
@@ -293,7 +287,7 @@ def iter_bash_calls(filepath):
 def find_all_transcripts():
     out = []
     for proj in os.listdir(ROOT):
-        if proj == EXCLUDE_PROJECT:
+        if proj in EXCLUDE_PROJECTS:
             continue
         proj_path = os.path.join(ROOT, proj)
         if not os.path.isdir(proj_path):
@@ -302,7 +296,7 @@ def find_all_transcripts():
             if not fn.endswith('.jsonl'):
                 continue
             sid = fn[:-6]
-            if sid == EXCLUDE_SESSION:
+            if sid in EXCLUDE_SESSIONS:
                 continue
             out.append((proj, sid, os.path.join(proj_path, fn)))
     return out

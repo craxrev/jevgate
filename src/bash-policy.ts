@@ -2,45 +2,51 @@ import type { Questions, JevResponse } from './jev.ts';
 import { noul } from './jev.ts';
 
 /**
- * Commands jevgate never pre-approves. They continue through the normal
- * permission flow untouched. Conservative on purpose: Jev only sees the command text.
+ * Commands jevgate never asks Jev about ("not-asked"). They continue through
+ * the normal permission flow untouched. Conservative on purpose: Jev only sees
+ * the command text. Each rule carries a name so the log says which one tripped.
  */
-export const PASSTHROUGH: RegExp[] = [
-  /\bgit\s+(push|reset|clean|checkout|restore|switch|rebase|merge|commit|cherry-pick|revert|stash|tag|remote|config|filter-branch|gc|prune)\b/,
-  /\bgit\s+branch\s+.*-[dDmM]\b/,
-  /\b(rm|rmdir|mv|cp|dd|shred|truncate|touch|mkdir|ln|chmod|chown|chgrp)\b/,
-  /\b(curl|wget|ssh|scp|sftp|rsync|nc|ncat|netcat|telnet|ftp)\b/,
-  /\b(sudo|su|doas)\b/,
-  /\b(kill|killall|pkill|reboot|shutdown|launchctl|crontab|systemctl|service)\b/,
-  /\b(npm|pnpm|yarn|bun)\s+(publish|install|i|ci|add|remove|rm|uninstall|link|unlink|update|upgrade|exec|x|create|init|login|logout|deprecate|version)\b/,
-  /\b(npx|bunx|pipx|uvx)\b/,
-  /\b(pip3?|uv|poetry|cargo|gem|go)\s+(install|add|remove|uninstall|publish|push)\b/,
-  /\b(brew|apt|apt-get|yum|dnf|pacman|port)\b/,
-  /\b(docker|podman|kubectl|helm|terraform|pulumi|ansible|vagrant)\b/,
-  /\b(aws|gcloud|az|doctl|heroku|vercel|netlify|fly|wrangler|gh\s+api)\b/,
-  /\bgh\s+(pr|issue|release|repo|gist|secret|variable)\s+(create|edit|close|merge|delete|comment|reopen|set|remove)\b/,
-  /\b(eval|exec|source|export|unset|alias|trap)\b/,
-  /^\s*\.\s/,
-  /\|\s*(sh|bash|zsh|fish|python3?|node|deno|bun|perl|ruby)\b/,
-  /\b(sed|perl)\s+(-[a-zA-Z]*i|--in-place)\b/,
-  /\btee\b/,
-  /\bdefaults\s+write\b/,
-  /\bopen\b/,
-  /\bclaude\b/,
-  /\.env\b/,
-  /(secret|token|passw(or)?d|credential|api[_-]?key|private[_-]?key)/i,
-  /~\/\.(ssh|aws|gnupg|config|claude|npmrc|netrc)/,
-  /\$\{?HOME\}?\/\.(ssh|aws|gnupg|config|claude)/,
+export const NEVER_ASK: { name: string; re: RegExp }[] = [
+  { name: 'git-write', re: /\bgit\s+(push|reset|clean|checkout|restore|switch|rebase|merge|commit|cherry-pick|revert|stash|tag|remote|config|filter-branch|gc|prune)\b/ },
+  { name: 'git-branch-delete', re: /\bgit\s+branch\s+.*-[dDmM]\b/ },
+  { name: 'file-write', re: /\b(rm|rmdir|mv|cp|dd|shred|truncate|touch|mkdir|ln|chmod|chown|chgrp)\b/ },
+  { name: 'network', re: /\b(curl|wget|ssh|scp|sftp|rsync|nc|ncat|netcat|telnet|ftp)\b/ },
+  { name: 'privilege', re: /\b(sudo|su|doas)\b/ },
+  { name: 'system', re: /\b(kill|killall|pkill|reboot|shutdown|launchctl|crontab|systemctl|service)\b/ },
+  { name: 'package-manager', re: /\b(npm|pnpm|yarn|bun)\s+(publish|install|i|ci|add|remove|rm|uninstall|link|unlink|update|upgrade|exec|x|create|init|login|logout|deprecate|version)\b/ },
+  { name: 'package-runner', re: /\b(npx|bunx|pipx|uvx)\b/ },
+  { name: 'package-manager', re: /\b(pip3?|uv|poetry|cargo|gem|go)\s+(install|add|remove|uninstall|publish|push)\b/ },
+  { name: 'system-package', re: /\b(brew|apt|apt-get|yum|dnf|pacman|port)\b/ },
+  { name: 'infra-cli', re: /\b(docker|podman|kubectl|helm|terraform|pulumi|ansible|vagrant)\b/ },
+  { name: 'cloud-cli', re: /\b(aws|gcloud|az|doctl|heroku|vercel|netlify|fly|wrangler|gh\s+api)\b/ },
+  { name: 'gh-write', re: /\bgh\s+(pr|issue|release|repo|gist|secret|variable)\s+(create|edit|close|merge|delete|comment|reopen|set|remove)\b/ },
+  { name: 'shell-builtin', re: /\b(eval|exec|source|export|unset|alias|trap)\b/ },
+  { name: 'shell-builtin', re: /^\s*\.\s/ },
+  { name: 'pipe-to-interpreter', re: /\|\s*(sh|bash|zsh|fish|python3?|node|deno|bun|perl|ruby)\b/ },
+  { name: 'in-place-edit', re: /\b(sed|perl)\s+(-[a-zA-Z]*i|--in-place)\b/ },
+  { name: 'in-place-edit', re: /\btee\b/ },
+  { name: 'system', re: /\bdefaults\s+write\b/ },
+  { name: 'open', re: /\bopen\b/ },
+  { name: 'claude-cli', re: /\bclaude\b/ },
+  { name: 'secrets', re: /\.env\b/ },
+  { name: 'secrets', re: /(secret|token|passw(or)?d|credential|api[_-]?key|private[_-]?key)/i },
+  { name: 'dotfiles', re: /~\/\.(ssh|aws|gnupg|config|claude|npmrc|netrc)/ },
+  { name: 'dotfiles', re: /\$\{?HOME\}?\/\.(ssh|aws|gnupg|config|claude)/ },
 ];
 
 const HARMLESS_REDIRECTS = /(\d?>\s*\/dev\/null|2>&1|&>\s*\/dev\/null)/g;
 
+/** The never-ask rule a command trips, or undefined when Jev may be asked. */
+export function neverAskReason(command: string): string | undefined {
+  if (command.length > 2000) return 'too-long';
+  const stripped = command.replace(HARMLESS_REDIRECTS, '');
+  if (/>/.test(stripped)) return 'redirect';
+  return NEVER_ASK.find((r) => r.re.test(command))?.name;
+}
+
 /** True when the command must skip Jev entirely. */
 export function isPassthrough(command: string): boolean {
-  if (command.length > 2000) return true;
-  const stripped = command.replace(HARMLESS_REDIRECTS, '');
-  if (/>/.test(stripped)) return true;
-  return PASSTHROUGH.some((re) => re.test(command));
+  return neverAskReason(command) !== undefined;
 }
 
 export type BashState = {
@@ -97,9 +103,10 @@ export const QUESTIONS: Questions = {
   },
 };
 
+/** `fast-lane`: Jev approved, the call skips the normal review. `unsure`: asked, not confident, normal flow. */
 export type BashDecision =
-  | { action: 'allow'; reason: string; scores: Record<string, number> }
-  | { action: 'pass'; reason: string; scores: Record<string, number> };
+  | { action: 'fast-lane'; reason: string; scores: Record<string, number> }
+  | { action: 'unsure'; reason: string; scores: Record<string, number> };
 
 export type BashThresholds = {
   /** Minimum read_only or dev_task probability. */
@@ -118,9 +125,9 @@ export function decide(res: JevResponse, t: BashThresholds): BashDecision {
   const devTask = scores.dev_task >= t.threshold && scores.unsafe <= t.devUnsafeMax;
   const summary = `read-only ${scores.read_only.toFixed(2)}, dev-task ${scores.dev_task.toFixed(2)}, unsafe ${scores.unsafe.toFixed(2)}`;
   if (readOnly || devTask) {
-    return { action: 'allow', reason: `jevgate ${readOnly ? 'read-only' : 'dev-task'}: ${summary}`, scores };
+    return { action: 'fast-lane', reason: `jevgate ${readOnly ? 'read-only' : 'dev-task'}: ${summary}`, scores };
   }
-  return { action: 'pass', reason: `below threshold: ${summary}`, scores };
+  return { action: 'unsure', reason: `below threshold: ${summary}`, scores };
 }
 
 export function allowOutput(reason: string) {

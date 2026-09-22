@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isPassthrough, buildState, decide, allowOutput } from '../src/bash-policy.ts';
+import { isPassthrough, neverAskReason, buildState, decide, allowOutput } from '../src/bash-policy.ts';
 import type { JevResponse } from '../src/jev.ts';
 
 const res = (read_only: number, dev_task: number, unsafe: number): JevResponse => ({
@@ -53,6 +53,14 @@ test('passthrough lets observational commands through to Jev', () => {
   }
 });
 
+test('neverAskReason names the rule that tripped', () => {
+  assert.equal(neverAskReason('git push origin main'), 'git-write');
+  assert.equal(neverAskReason('rm -rf dist'), 'file-write');
+  assert.equal(neverAskReason('echo hi > out.txt'), 'redirect');
+  assert.equal(neverAskReason('cat ~/.aws/credentials'), 'cloud-cli'); // substring match on 'aws', fixed by the tokenizer later
+  assert.equal(neverAskReason('git status'), undefined);
+});
+
 test('buildState splits chained segments', () => {
   const s = buildState({ command: 'cd x && npm test | tail -5; echo done' }, '/r');
   assert.deepEqual(s.segments, ['cd x', 'npm test', 'tail -5', 'echo done']);
@@ -61,11 +69,11 @@ test('buildState splits chained segments', () => {
 
 test('decide allows only above threshold and below the matching unsafe ceiling', () => {
   const t = { threshold: 0.95, devUnsafeMax: 0.6 };
-  assert.equal(decide(res(0.99, 0.1, 0.01), t).action, 'allow');
-  assert.equal(decide(res(0.1, 0.98, 0.54), t).action, 'allow'); // npm test shape
-  assert.equal(decide(res(0.1, 0.98, 0.7), t).action, 'pass');
-  assert.equal(decide(res(0.9, 0.9, 0.01), t).action, 'pass');
-  assert.equal(decide(res(0.99, 0.1, 0.2), t).action, 'pass'); // read-only claims but unsafe too high
+  assert.equal(decide(res(0.99, 0.1, 0.01), t).action, 'fast-lane');
+  assert.equal(decide(res(0.1, 0.98, 0.54), t).action, 'fast-lane'); // npm test shape
+  assert.equal(decide(res(0.1, 0.98, 0.7), t).action, 'unsure');
+  assert.equal(decide(res(0.9, 0.9, 0.01), t).action, 'unsure');
+  assert.equal(decide(res(0.99, 0.1, 0.2), t).action, 'unsure'); // read-only claims but unsafe too high
   assert.match(decide(res(0.99, 0.1, 0.01), t).reason, /read-only/);
   assert.match(decide(res(0.1, 0.98, 0.3), t).reason, /dev-task/);
 });

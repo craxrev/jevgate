@@ -4,7 +4,7 @@ import { readStdinJson, emit } from '../src/stdin.ts';
 import { fromEnv, defaultLogPath } from '../src/config.ts';
 import { ask, nodeFetch } from '../src/jev.ts';
 import { appendLog } from '../src/log.ts';
-import { isPassthrough, buildState, QUESTIONS, decide, allowOutput } from '../src/bash-policy.ts';
+import { neverAskReason, buildState, QUESTIONS, decide, allowOutput } from '../src/bash-policy.ts';
 
 type Input = {
   session_id?: string;
@@ -23,8 +23,9 @@ async function main(): Promise<void> {
   const command = input.tool_input?.command;
   if (typeof command !== 'string' || !command.trim()) return;
 
-  if (isPassthrough(command)) {
-    appendLog(logPath, { feature: 'bash', action: 'passthrough', session: input.session_id, tool_use_id: input.tool_use_id, command });
+  const notAsked = neverAskReason(command);
+  if (notAsked) {
+    appendLog(logPath, { feature: 'bash', action: 'not-asked', reason: notAsked, session: input.session_id, tool_use_id: input.tool_use_id, command });
     return;
   }
 
@@ -45,7 +46,7 @@ async function main(): Promise<void> {
     scores: d.scores,
     ms: Date.now() - t0,
   });
-  if (d.action === 'allow') emit(allowOutput(d.reason));
+  if (d.action === 'fast-lane') emit(allowOutput(d.reason));
 }
 
 main().catch((err: unknown) => {

@@ -7,6 +7,7 @@ export type LogEntry = {
   action: string;
   session?: string;
   tool_use_id?: string;
+  reason?: string;
   command?: string;
   scores?: Record<string, number>;
   ms?: number;
@@ -46,14 +47,19 @@ export function parseLog(text: string): LogEntry[] {
 
 export type Tally = { allowed: number; passed: number; passthrough: number; blocks: number; agentDenies: number };
 
+/** Current action names, with the pre-0.1.7 names still counted. */
+export const FAST_LANE = new Set(['fast-lane', 'allow']);
+export const UNSURE = new Set(['unsure', 'pass']);
+export const NOT_ASKED = new Set(['not-asked', 'passthrough']);
+
 export function tally(entries: readonly LogEntry[], session: string): Tally {
   const t: Tally = { allowed: 0, passed: 0, passthrough: 0, blocks: 0, agentDenies: 0 };
   for (const e of entries) {
     if (e.session !== session) continue;
     if (e.feature === 'bash') {
-      if (e.action === 'allow') t.allowed++;
-      else if (e.action === 'pass') t.passed++;
-      else if (e.action === 'passthrough') t.passthrough++;
+      if (FAST_LANE.has(e.action)) t.allowed++;
+      else if (UNSURE.has(e.action)) t.passed++;
+      else if (NOT_ASKED.has(e.action)) t.passthrough++;
     } else if (e.feature === 'done' && e.action === 'block') t.blocks++;
     else if (e.feature === 'agent' && e.action === 'deny') t.agentDenies++;
   }
@@ -74,7 +80,7 @@ export function footerLabel(t: Tally, compactions: number): string | undefined {
 export function statusText(t: Tally, compactions: number): string | undefined {
   const parts: string[] = [];
   if (t.allowed) parts.push(`✓${t.allowed} fast-lane`);
-  if (t.passed) parts.push(`↷${t.passed} classifier`);
+  if (t.passed) parts.push(`↷${t.passed} unsure`);
   if (t.blocks) parts.push(`✗${t.blocks} done-check`);
   if (t.agentDenies) parts.push(`⊘${t.agentDenies} subagent`);
   if (compactions) parts.push(`⇊${compactions} compact`);
@@ -91,8 +97,8 @@ function fmtScores(s: Record<string, number> | undefined): string {
 /** The dim line under a Bash row; undefined keeps the row as the engine drew it. */
 export function bashRowText(e: LogEntry): string | undefined {
   if (e.feature !== 'bash') return undefined;
-  if (e.action === 'allow') return `▸ jevgate fast-lane · ${fmtScores(e.scores)} · ${e.ms ?? '?'}ms`;
-  if (e.action === 'pass') return `↷ jevgate → classifier · ${fmtScores(e.scores)}`;
+  if (FAST_LANE.has(e.action)) return `▸ jevgate fast-lane · ${fmtScores(e.scores)} · ${e.ms ?? '?'}ms`;
+  if (UNSURE.has(e.action)) return `↷ jevgate unsure · ${fmtScores(e.scores)}`;
   return undefined;
 }
 

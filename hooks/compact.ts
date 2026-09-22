@@ -13,7 +13,7 @@
 // The validator follows `$` only within this file, so all of it lives here.
 import type { EngineInterface, On, PluginOptions, Register, SessionMessage } from 'claude-code';
 import { fromRaw, type Config } from '../src/config.ts';
-import { ask, noul, type FetchLike } from '../src/jev.ts';
+import { ask, type FetchLike } from '../src/jev.ts';
 import {
   candidates,
   apply,
@@ -181,12 +181,10 @@ export const register: Register = (on: On, options: PluginOptions) => {
           const tJev = Date.now();
           const res = await ask(hostFetch($), { apiKey, model: cfg.model }, state, questions);
           rank.jev_ms = Date.now() - tJev;
-          for (const [id, s] of rankScores(res, ranked, cfg.compactRestoreGateMin)) scores.set(id, s);
-          const gate = noul(res, 'any_needed');
-          const choice = res.answers.most_needed;
+          const r = rankScores(res, ranked, cfg.compactRestoreMinConfidence);
+          for (const [id, s] of r.scores) scores.set(id, s);
           const vals = [...scores.values()].sort((a, b) => b - a);
-          rank.jev_gate = gate;
-          rank.jev_choice = choice && choice.type === 'choice' ? { choice: choice.choice, confidence: choice.confidence, none: choice.probabilities.none ?? 0 } : undefined;
+          rank.jev_choice = { choice: r.choice, confidence: r.confidence, none: r.none };
           rank.jev_scores = { n: vals.length, max: vals[0] ?? 0, top5: vals.slice(0, 5) };
           rank.jev_usage = res.usage;
           const keep = pickRestore(scores, cfg.compactRestoreTopK, cfg.compactRestoreMinScore);

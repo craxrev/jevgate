@@ -1,5 +1,4 @@
 import type { Questions, JevResponse } from './jev.ts';
-import { noul } from './jev.ts';
 
 /** Structural subset of Claude Code's SessionMessage. */
 export type ToolUse = {
@@ -157,9 +156,9 @@ export const MAX_RANKED = 250;
 export const NONE_OPTION = 'none';
 
 /**
- * Two questions instead of one per candidate: a Choice over the candidate ids
- * (its probabilities are the ranking) and a noul gate, because Choice mass
- * always lands somewhere even when nothing is needed.
+ * One Choice over the candidate ids: its probabilities are the ranking, and
+ * its `confidence` says whether the ranking means anything (Choice mass always
+ * lands somewhere, even when nothing is needed).
  */
 export function rankQuestions(cands: readonly Candidate[]): Questions {
   const criteria: Record<string, string | null> = { [NONE_OPTION]: 'No old output is still needed word for word; the head snippets are enough or re-running is fine.' };
@@ -167,35 +166,27 @@ export function rankQuestions(cands: readonly Candidate[]): Questions {
     criteria[c.id] = `calls[${i}] (${c.tool})`;
   });
   return {
-    any_needed: {
-      type: 'noul',
-      instructions:
-        'To finish `goal`, the assistant will still need the FULL output of at least one of `calls` word for word. ' +
-        'Each entry shows the tool, its input and the first characters of its output (`head`). ' +
-        'The head alone is not enough for that call, and re-running the tool later is not an acceptable substitute.',
-      criteria: {
-        true: 'Some call\'s exact content beyond its head is still load-bearing for the ongoing task.',
-        false: 'Every head is enough, the outputs are stale, or re-running is fine.',
-      },
-    },
     most_needed: {
       type: 'choice',
       instructions:
         'Which entry of `calls` is the assistant most likely to still need in FULL, word for word, to finish `goal`? ' +
-        'Options are the call ids; `none` when no full output is needed.',
+        'Each entry shows the tool, its input and the first characters of its output (`head`); the full output is not shown. ' +
+        'Options are the call ids; `none` when every head is enough, the outputs are stale, or re-running the tool is fine.',
       criteria,
     },
   };
 }
 
-/** Per-candidate keep scores from the Choice probabilities, gated by the noul: nothing scores when the gate is under `gateMin`. */
-export function rankScores(res: JevResponse, cands: readonly Candidate[], gateMin: number): Map<string, number> {
-  const scores = new Map<string, number>();
-  const gate = noul(res, 'any_needed');
+export type RankResult = { scores: Map<string, number>; confidence: number; none: number; choice: string };
+
+/** Per-candidate keep scores from the Choice probabilities; all zero when Jev's confidence is under `minConfidence`. */
+export function rankScores(res: JevResponse, cands: readonly Candidate[], minConfidence: number): RankResult {
   const a = res.answers.most_needed;
-  const probs = a && a.type === 'choice' ? a.probabilities : {};
-  for (const c of cands) scores.set(c.id, gate < gateMin ? 0 : (probs[c.id] ?? 0));
-  return scores;
+  if (!a || a.type !== 'choice') throw new Error('Jev answer most_needed missing or not a choice');
+  const gated = a.confidence < minConfidence;
+  const scores = new Map<string, number>();
+  for (const c of cands) scores.set(c.id, gated ? 0 : (a.probabilities[c.id] ?? 0));
+  return { scores, confidence: a.confidence, none: a.probabilities[NONE_OPTION] ?? 0, choice: a.choice };
 }
 
 /** Highest-scoring candidates to keep verbatim, capped at topK and floored at minScore. */

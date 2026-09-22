@@ -86,8 +86,7 @@ test('rank state exposes heads and goal, never full outputs', () => {
   assert.deepEqual(s.goal, ['Fix the failing test. Never edit src/generated.', 'thanks, now the other one']);
   for (const call of s.calls) assert.ok(call.head.length <= 300);
   const q = rankQuestions(c);
-  assert.deepEqual(Object.keys(q), ['any_needed', 'most_needed']);
-  assert.equal(q.any_needed!.type, 'noul');
+  assert.deepEqual(Object.keys(q), ['most_needed']);
   const choice = q.most_needed!;
   assert.equal(choice.type, 'choice');
   if (choice.type === 'choice') assert.deepEqual(Object.keys(choice.criteria), ['none', 't1', 't2', 't4']);
@@ -106,21 +105,21 @@ test('goal skips slash-command echoes, caveats and reminders', () => {
   assert.deepEqual(goalMessages([u('/compact')]), []);
 });
 
-test('rankScores: Choice probabilities gated by the noul', () => {
+test('rankScores: Choice probabilities gated by its confidence', () => {
   const c = candidates(transcript(), { preserveRecent: 2, headChars: 300 });
-  const res = (gate: number, probs: Record<string, number>) => ({
+  const res = (confidence: number, probs: Record<string, number>) => ({
     model: 'j',
-    answers: {
-      any_needed: { type: 'noul' as const, noul: gate },
-      most_needed: { type: 'choice' as const, choice: 't2', probabilities: probs, confidence: 0.7 },
-    },
+    answers: { most_needed: { type: 'choice' as const, choice: 't2', probabilities: probs, confidence } },
   });
-  const open = rankScores(res(0.8, { none: 0.1, t1: 0.2, t2: 0.6, t4: 0.1 }), c, 0.4);
-  assert.deepEqual([...open.entries()], [['t1', 0.2], ['t2', 0.6], ['t4', 0.1]]);
-  const closed = rankScores(res(0.2, { none: 0.1, t1: 0.2, t2: 0.6, t4: 0.1 }), c, 0.4);
-  assert.deepEqual([...closed.values()], [0, 0, 0]);
-  assert.deepEqual([...pickRestore(open, 5, 0.1)].sort(), ['t1', 't2', 't4']);
-  assert.deepEqual([...pickRestore(open, 1, 0.1)], ['t2']);
+  const sure = rankScores(res(0.7, { none: 0.1, t1: 0.2, t2: 0.6, t4: 0.1 }), c, 0.4);
+  assert.deepEqual([...sure.scores.entries()], [['t1', 0.2], ['t2', 0.6], ['t4', 0.1]]);
+  assert.equal(sure.none, 0.1);
+  assert.equal(sure.choice, 't2');
+  const unsure = rankScores(res(0.29, { none: 0.47, t1: 0.52, t2: 0.01, t4: 0 }), c, 0.4);
+  assert.deepEqual([...unsure.scores.values()], [0, 0, 0]);
+  assert.deepEqual([...pickRestore(sure.scores, 5, 0.1)].sort(), ['t1', 't2', 't4']);
+  assert.deepEqual([...pickRestore(sure.scores, 1, 0.1)], ['t2']);
+  assert.throws(() => rankScores({ model: 'j', answers: {} }, c, 0.4), /most_needed/);
 });
 
 test('rankable keeps the largest candidates, in order, under the Choice cap', () => {

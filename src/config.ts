@@ -43,8 +43,8 @@ export type Config = {
   compactRestoreTopK: number;
   /** Share of the Choice mass a candidate needs to be restored. */
   compactRestoreMinScore: number;
-  /** The `any_needed` noul must reach this before anything is restored. */
-  compactRestoreGateMin: number;
+  /** Jev's Choice confidence must reach this before anything is restored. */
+  compactRestoreMinConfidence: number;
   compactMinReductionRatio: number;
 };
 
@@ -86,7 +86,7 @@ export const DEFAULTS: Config = {
   compactTruncateHeadChars: 300,
   compactRestoreTopK: 5,
   compactRestoreMinScore: 0.1,
-  compactRestoreGateMin: 0.4,
+  compactRestoreMinConfidence: 0.4,
   compactMinReductionRatio: 0.25,
 };
 
@@ -154,7 +154,7 @@ export function fromRaw(raw: Raw): Config {
     compactTruncateHeadChars: num(raw.compactTruncateHeadChars, d.compactTruncateHeadChars),
     compactRestoreTopK: num(raw.compactRestoreTopK, d.compactRestoreTopK),
     compactRestoreMinScore: num(raw.compactRestoreMinScore, d.compactRestoreMinScore),
-    compactRestoreGateMin: num(raw.compactRestoreGateMin, d.compactRestoreGateMin),
+    compactRestoreMinConfidence: num(raw.compactRestoreMinConfidence, d.compactRestoreMinConfidence),
     compactMinReductionRatio: num(raw.compactMinReductionRatio, d.compactMinReductionRatio),
   };
 }

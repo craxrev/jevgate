@@ -78,6 +78,8 @@ test('not requested asks on its own and turns a flagged ask into a deny; unsure 
   const a = decide({ requested: noul(0.1) });
   assert.equal(a.action, 'ask');
   assert.equal(a.reason, 'jevgate: asking · not requested');
+  assert.deepEqual(a.flags, ['not requested']);
+  assert.deepEqual(decide({ requested: noul(0.1), changes_system: noul(0.9) }).flags, ['changes_system', 'not requested']);
   const d = decide({ requested: noul(0.1), changes_system: noul(0.9) });
   assert.equal(d.action, 'deny');
   assert.equal(d.reason, 'jevgate: denied · changes_system, not requested');

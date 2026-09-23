@@ -167,7 +167,8 @@ export function rawScores(res: JevResponse, facts: readonly Fact[]): Record<stri
 
 // ---------- facts to outcome ----------
 
-export type Decision = { action: Outcome; reason: string; hits: string[]; facts: Facts };
+/** `flags`: what the reason names, `not requested` included; empty when nothing was flagged. */
+export type Decision = { action: Outcome; reason: string; hits: string[]; flags: string[]; facts: Facts };
 
 /**
  * The strictest outcome among the facts, an unsure fact counting as `unsure`.
@@ -193,9 +194,10 @@ export function decideFacts(facts: Facts, rules: Rules = DEFAULT_RULES, unsure: 
     const o = rules.requested?.false;
     if (o && RANK[o] > RANK[action]) action = o;
   }
-  const detail = [...hits, ...(notAsked ? ['not requested'] : [])].join(', ');
+  const flags = [...hits, ...(notAsked ? ['not requested'] : [])];
+  const detail = flags.join(', ');
   const reason = action === 'allow' ? 'jevgate: nothing flagged' : `jevgate: ${action === 'deny' ? 'denied' : 'asking'} · ${detail}`;
-  return { action, reason, hits, facts };
+  return { action, reason, hits, flags, facts };
 }
 
 /** Rules with the overrides of a rules file on top: `{ "deletes": { "local_no_copy": "deny" }, "modes": { "auto": { … } } }`. */

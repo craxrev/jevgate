@@ -36,6 +36,10 @@ export type Parsed = {
 
 type Word = { value: string; quoted: boolean; glob: boolean; dollar: boolean };
 
+/** A `$` followed by one of these can expand; any other `$` (a regex anchor before `"`, a trailing `$`) is literal. */
+const EXPANDS = /[A-Za-z_{(0-9@*#?!$-]/;
+const EXPANSION = /\$[A-Za-z_{(0-9@*#?!$-]/;
+
 type Redirect = { op: string; fd?: string; target?: Word };
 
 const OK_FD_TARGET = /^\d+$/;
@@ -148,7 +152,7 @@ export function parseShell(source: string): Parsed {
         const body = source.slice(i + 1, end === -1 ? n : end);
         value += body;
         quoted = true;
-        if (body.includes('$')) dollar = true;
+        if (EXPANSION.test(body)) dollar = true;
         i = end === -1 ? n : end + 1;
         continue;
       }
@@ -160,6 +164,11 @@ export function parseShell(source: string): Parsed {
           if (d === '\\' && i + 1 < n) {
             value += source[i + 1];
             i += 2;
+            continue;
+          }
+          if (d === '$' && !EXPANDS.test(source[i + 1] ?? '')) {
+            value += d;
+            i++;
             continue;
           }
           if (d === '$') {
@@ -194,6 +203,11 @@ export function parseShell(source: string): Parsed {
           value += source.slice(i + 2, end === -1 ? n : end);
           quoted = true;
           i = end === -1 ? n : end + 1;
+          continue;
+        }
+        if (!EXPANDS.test(source[i + 1] ?? '')) {
+          value += c;
+          i++;
           continue;
         }
         dollar = true;
@@ -522,7 +536,7 @@ function buildSegment(text: string, words: Word[], flag: (f: string) => void): S
     flags,
     env,
     globs: words.some((w) => w.glob),
-    dollar: words.some((w) => w.dollar || w.value.includes('$')),
+    dollar: words.some((w) => w.dollar || EXPANSION.test(w.value)),
     newline: words.some((w) => w.value.includes('\n')),
   };
   if (KEYWORDS.has(program)) flag('compound');

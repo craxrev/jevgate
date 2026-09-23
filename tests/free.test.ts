@@ -109,8 +109,10 @@ test('sed scripts: regex ranges and prints are fine, w/W/e are not', () => {
     "sed -n '/^class A/,/^class B/p' f", 'sed -n 60,140p f', "sed -E 's/(a|b)/[\\1]/g' f", "sed '1d' f",
     "sed -n '/x/{p;q}' f", "sed 's|a/b|c|' f", "sed -n '/we/p' f", "sed 's/e/w/' f", "sed -e 's/a/b/' -e 's/c/d/' f", "sed -n 'l' f", "sed = f",
   ]);
-  // `$` in any argument of a flag-gated command is rejected before the script is read
-  notFree([["sed 's/ *{$//' f", /argument with \$/], ["sed -n '$p' f", /argument with \$/]]);
+  // a `$` that could expand, in any argument of a flag-gated command, is rejected before the script is read;
+  // one that cannot (an anchor before `/` or `"`, a trailing `$`) is literal
+  notFree([["sed -n '$p' f", /argument with \$/], ['grep "$x" f', /syntax var/]]);
+  free(["sed 's/ *{$//' f", 'sed -n 840,915p a.d.ts | grep -vE "^\\s*\\*\\s*$"', "grep -c 'x$' f"]);
   assert.equal(sedScriptReason('s/ *{$//'), undefined);
   assert.equal(sedScriptReason('$p'), undefined);
   assert.equal(sedScriptReason('1d;$d'), undefined);

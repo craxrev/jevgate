@@ -70,7 +70,7 @@ export function askAnswer(result: unknown): keyof typeof ASK_ANSWERS | undefined
 /** The flags of a guard entry, one per fact: `deletes local_no_copy, not requested` is two. */
 export function flagsOf(e: LogEntry): string[] {
   const c = e.category ?? e.reason ?? '?';
-  return c.split(', ').map((f) => (e.feature === 'file' ? 'file:' : '') + f);
+  return c.split(', ').filter(Boolean).map((f) => (e.feature === 'file' ? 'file:' : '') + f);
 }
 /** Guard outcomes per session. `free` is silent and not counted in the footer; unreachable counts as denied there. */
 export type Tally = { free: number; allowed: number; asked: number; denied: number; blocks: number; agentDenies: number };

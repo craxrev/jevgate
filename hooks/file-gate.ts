@@ -81,10 +81,10 @@ async function main(): Promise<void> {
     const d = decideFacts(resolveFacts(res, FILE_FACTS, thresholds(cfg)), rules(cfg, mode), cfg.unsureOutcome);
     const entry = { ...base, facts: d.facts, scores: rawScores(res, FILE_FACTS), ms: Date.now() - t0 };
     if (d.action === 'deny') {
-      appendLog(logPath, { ...entry, action: 'denied', category: d.hits.join(', '), reason: d.reason });
+      appendLog(logPath, { ...entry, action: 'denied', category: d.flags.join(', '), reason: d.reason });
       emit(denyOutput(d.reason));
     } else if (d.action === 'ask') {
-      appendLog(logPath, { ...entry, action: 'asked', category: d.hits.join(', '), reason: d.reason });
+      appendLog(logPath, { ...entry, action: 'asked', category: d.flags.join(', '), reason: d.reason });
       emit(askOutput(d.reason));
     } else {
       appendLog(logPath, { ...entry, action: 'allow' });

@@ -182,15 +182,25 @@ under `compactMinReductionRatio`, the built-in summary runs instead.
 
 </details>
 
-## Known limits
+## Known limits and to-do
 
 - Uploads to your own server (`rsync`, `scp`, `ssh … ./deploy.sh`) score as
   exfiltration or deployment. Jev cannot tell your host from a stranger's.
+  To do: a `trustedHosts` option, or the aliases from `~/.ssh/config` in the state.
 - `exceeds_request` is log-only. It reads agreed proposals well now, but a
-  one-word follow-up like "amend!" still scores high on real sessions.
+  one-word follow-up like "amend!" still scores high on real sessions. To do:
+  revisit the threshold with more logged data.
+- The compaction ranking sends a 300-character head per candidate; the heads are
+  90% of the request. To do: a shorter ranking head (150 characters) would halve
+  the call.
+- A judged Bash call costs about 5k tokens, 3.7k of them the eight questions.
+  Cents a day at TypeSafe's price; shorter questions would halve it.
 - The dim line appears when a call finishes, not while it runs, and not on rows
   folded into a group.
 - Text-heavy sessions compact by 30–50%, not the 80–90% a summary gives.
+- Once, a gate failed to start and Claude Code ran the command with a warning.
+  `hooks/run.sh` now blocks on that and keeps the trace in
+  `~/.claude/jevgate/hook-errors.log`; the cause is unknown until it recurs.
 
 ## Development
 

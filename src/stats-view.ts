@@ -75,7 +75,7 @@ export function meanTiming(ts: readonly Timing[]): Timing | undefined {
 
 const pct = (n: number, total: number) => (total ? `${Math.round((100 * n) / total)}%` : '');
 
-export const COLORS = { free: undefined, allow: 'green', latency: 'cyan', asked: 'yellow', denied: 'red', unreachable: 'yellow' } as const;
+export const COLORS = { free: undefined, allow: 'green', latency: 'cyan', asked: 'yellow', denied: 'red', unreachable: 'claude' } as const;
 
 export type StatsView = { session: BashStats; all: BashStats; width: number; entries: number };
 
@@ -97,23 +97,18 @@ export function statsLines(v: StatsView): Line[] {
   row('allow', s.allowed, st, COLORS.allow);
   row('asked', s.asked, st, COLORS.asked);
   row('denied', s.denied, st, COLORS.denied);
-  if (s.unreachable) row('unreachable', s.unreachable, st, COLORS.unreachable);
-  out.push({ text: ' free    read-only, never judged', dim: true });
-  out.push({ text: ' allow   nothing flagged', dim: true });
-  out.push({ text: ' asked   flagged, you decided', dim: true });
-  out.push({ text: ' denied  refused', dim: true });
+  if (s.unreachable) row('passed on', s.unreachable, st, COLORS.unreachable);
+  out.push({ text: ' free       read-only, never judged', dim: true });
+  out.push({ text: ' allow      nothing flagged', dim: true });
+  out.push({ text: ' asked      flagged, you decided', dim: true });
+  out.push({ text: ' denied     refused', dim: true });
+  if (s.unreachable) out.push({ text: ' passed on  no verdict, left to Claude Code', dim: true });
   out.push({ text: '' });
 
   if (s.asked) {
     const pending = s.asked - s.approved - s.rejected;
     out.push({ text: 'Your answers to asks', bold: true });
     out.push({ text: ` approved ${s.approved} · rejected ${s.rejected}${pending > 0 ? ` · unanswered ${pending}` : ''}`, dim: true });
-    out.push({ text: '' });
-  }
-  if (s.unreachable || s.blocked) {
-    out.push({ text: 'Not judged by Jev', bold: true });
-    if (s.unreachable) out.push({ text: ` handed to Claude Code ${s.unreachable} (Jev unreachable)`, color: COLORS.unreachable });
-    if (s.blocked) out.push({ text: ` asked ${s.blocked} (gateway blocked the request)`, color: COLORS.asked });
     out.push({ text: '' });
   }
 
@@ -150,7 +145,7 @@ export function statsLines(v: StatsView): Line[] {
   out.push({ text: `All-time · ${at} calls`, bold: true });
   out.push({ text: ` ${bar(a.free, at, barW + 12)} free ${pct(a.free, at)}`, dim: true });
   out.push({ text: ` allow ${a.allowed} · asked ${a.asked} · denied ${a.denied}`, dim: true });
-  if (a.unreachable) out.push({ text: ` unreachable ${a.unreachable}`, dim: true });
+  if (a.unreachable) out.push({ text: ` passed on ${a.unreachable}`, dim: true });
   out.push({ text: '' });
 
   const flags = (title: string, rows: [string, number][], color: string) => {

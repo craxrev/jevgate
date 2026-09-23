@@ -78,7 +78,9 @@ async function main(): Promise<void> {
       emit(allowOutput(d.reason));
     }
   } catch (err) {
-    if (err instanceof JevBlockedError) {
+    const blocked = err instanceof JevBlockedError;
+    // a block outside bypass goes to Claude Code like an outage; in bypass nothing stands behind this hook, so a person decides
+    if (blocked && failsClosed(mode)) {
       appendLog(logPath, { ...base, action: 'asked', category: 'blocked', reason: BLOCKED_REASON, error: String(err), ...traceFields(trace, t0), ms: Date.now() - t0 });
       emit(askOutput(BLOCKED_REASON));
       return;
@@ -86,7 +88,7 @@ async function main(): Promise<void> {
     // Bypass mode has no review behind this hook, so nothing unjudged runs there.
     // Elsewhere Claude Code's own flow (rules, classifier, prompts) takes over.
     const closed = failsClosed(mode);
-    appendLog(logPath, { ...base, action: 'unreachable', closed, error: String(err), ...traceFields(trace, t0), tries: trace.tries, ms: Date.now() - t0 });
+    appendLog(logPath, { ...base, action: 'unreachable', ...(blocked ? { category: 'blocked' } : {}), closed, error: String(err), ...traceFields(trace, t0), tries: trace.tries, ms: Date.now() - t0 });
     if (closed) emit(denyOutput(UNREACHABLE_REASON));
   }
 }

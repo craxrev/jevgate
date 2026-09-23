@@ -75,7 +75,7 @@ export function denyOutput(reason: string) {
 export const UNREACHABLE_REASON =
   'jevgate: Jev unreachable, refusing to run unguarded. Switch to auto mode (Shift+Tab) or retry.';
 
-/** The gateway in front of Jev refuses some requests by their content; a person decides those. */
+/** The gateway in front of Jev refuses some requests by their content; in bypass mode a person decides those. */
 export const BLOCKED_REASON = 'jevgate: asking · Jev could not judge this (request blocked by its gateway)';
 
 /** Modes with no review of their own behind the hook: a silent hook means the command runs. */

@@ -46,6 +46,7 @@ test('bashRowText: one dim line per judged call, nothing for free ones', () => {
   assert.match(bashRowText(unreachable!)!, /unreachable.*830ms/);
   assert.equal(bashRowText(asked!), '? jevgate asked · deletes local_no_copy · 410ms');
   assert.equal(bashRowText(blocked!), '? jevgate asked · Jev could not judge (gateway block) · 90ms');
+  assert.equal(bashRowText({ ts: 't', feature: 'bash', action: 'unreachable', category: 'blocked', ms: 120 }), '✗ jevgate unreachable · gateway blocked the request · 120ms');
   assert.equal(bashRowText(secret!), '✗ jevgate denied · exposes_secret');
 });
 

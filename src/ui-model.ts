@@ -126,7 +126,7 @@ export function bashRowText(e: LogEntry): string | undefined {
   const flags = e.category || e.reason || '';
   if (e.action === 'denied') return `✗ jevgate denied · ${flags}`;
   if (e.action === 'asked') return `? jevgate asked · ${e.category === 'blocked' ? 'Jev could not judge (gateway block)' : flags} · ${ms}`;
-  if (e.action === 'unreachable') return `✗ jevgate unreachable · Jev did not answer · ${ms}`;
+  if (e.action === 'unreachable') return `✗ jevgate unreachable · ${e.category === 'blocked' ? 'gateway blocked the request' : 'Jev did not answer'} · ${ms}`;
   if (e.action === 'allow') return `▸ jevgate allow · nothing flagged · ${ms}`;
   return undefined;
 }

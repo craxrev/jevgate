@@ -157,7 +157,7 @@ export type BashStats = {
   categories: [string, number][];
   /** Mean Jev latency over judged commands. */
   avgMs: number;
-  /** Latencies of the newest judged commands, oldest first, at most 40. */
+  /** Latencies of the newest judged commands, oldest first, at most 200. */
   msRecent: number[];
   blocks: number;
   agentDenies: number;
@@ -192,7 +192,7 @@ export function bashStats(entries: readonly LogEntry[], session?: string): BashS
       msSum += e.ms;
       msN++;
       s.msRecent.push(e.ms);
-      if (s.msRecent.length > 40) s.msRecent.shift();
+      if (s.msRecent.length > 200) s.msRecent.shift();
     }
   }
   s.categories = [...cats].sort((a, b) => b[1] - a[1]);

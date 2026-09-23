@@ -67,8 +67,11 @@ export function statsLines(v: StatsView): Line[] {
   }
 
   out.push({ text: 'Jev latency', bold: true });
-  const sp = spark(s.msRecent.slice(-Math.max(8, barW)));
-  out.push({ text: ` ${sp}`, color: COLORS.latency });
+  // a fixed frame: empty slots on the left, newest call on the right, so a short session still reads as a chart
+  const chartW = barW + 12;
+  const recent = s.msRecent.slice(-chartW);
+  out.push({ text: ` ${'·'.repeat(chartW - recent.length)}${spark(recent)}`, color: COLORS.latency });
+  out.push({ text: recent.length ? ` last ${recent.length} calls · peak ${Math.max(...recent)}ms` : ' no judged calls yet', dim: true });
   out.push({ text: ` avg ${s.avgMs}ms this session · ${a.avgMs}ms all-time`, dim: true });
   out.push({ text: '' });
 

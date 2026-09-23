@@ -32,6 +32,8 @@ import {
   footerLabel,
   bashRowText,
   groupSummary,
+  ASK_ANSWERS,
+  askAnswer,
   parseLog,
   kb,
   bashStats,
@@ -97,18 +99,28 @@ async function readLog($: Host): Promise<LogEntry[]> {
 }
 
 /** Appends one decision line to the same log the command hooks write. `$.fs` has no append, so read + write; best effort. */
-async function appendDecision($: Host, entry: Record<string, unknown>): Promise<void> {
+async function appendDecision($: Host, entry: Record<string, unknown>, near?: string): Promise<void> {
   try {
-    const paths = await logCandidates($);
-    let path = paths[0]!;
-    for (const p of paths) if (await $.fs.exists(p)) { path = p; break; }
-    const line = JSON.stringify({ ts: new Date().toISOString(), ...entry }) + '\n';
-    const existing = (await $.fs.exists(path)) ? await $.fs.read(path) : '';
-    await $.fs.write(path, existing + line);
+    // `near`: text of an entry this one belongs with; its log wins (the gates write where Claude Code's plugin data dir is)
+    let path: string | undefined;
+    let existing = '';
+    for (const p of await logCandidates($)) {
+      if (!(await $.fs.exists(p))) continue;
+      const text = await $.fs.read(p);
+      if (path === undefined || (near && text.includes(near))) {
+        path = p;
+        existing = text;
+        if (!near || text.includes(near)) break;
+      }
+    }
+    path ??= (await logCandidates($))[0]!;
+    await $.fs.write(path, existing + JSON.stringify({ ts: new Date().toISOString(), ...entry }) + '\n');
   } catch (err) {
-    $.ui.log(`jevgate: could not log compaction (${err instanceof Error ? err.message : String(err)})`);
+    $.ui.log(`jevgate: could not log (${err instanceof Error ? err.message : String(err)})`);
   }
 }
+
+const GUARDED = new Set(['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read']);
 
 /** Mutable UI state for one load of the module. */
 type UiRuntime = {
@@ -125,6 +137,15 @@ function cacheRows(ui: UiRuntime, entries: readonly LogEntry[]): boolean {
   let changed = false;
   for (const en of entries) {
     if (!en.tool_use_id) continue;
+    const answer = ASK_ANSWERS[en.action as keyof typeof ASK_ANSWERS];
+    if (answer) {
+      const asked = ui.rowCache.get(en.tool_use_id);
+      if (asked && !asked.endsWith(answer)) {
+        ui.rowCache.set(en.tool_use_id, `${asked} · ${answer}`);
+        changed = true;
+      }
+      continue;
+    }
     const line = bashRowText(en);
     if (ui.rowCache.get(en.tool_use_id) !== line) changed ||= line !== undefined;
     ui.rowCache.set(en.tool_use_id, line);
@@ -280,7 +301,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
   on('command.run', { command: 'jevgate' }, async ($) => {
     const [entries, sessionId] = await Promise.all([readLog($), $.session.id()]);
     ui.stats = { session: bashStats(entries, sessionId), all: bashStats(entries), sessionId, entries: entries.length };
-    const rows = 24 + Math.min(8, ui.stats.all.categories.length);
+    const rows = statsLines({ session: ui.stats.session, all: ui.stats.all, width: 80, entries: ui.stats.entries }).length + 2;
     try {
       await $.ui.open({ id: STATS_PANE_ID, title: 'jevgate', closeOnEscape: true, rows });
       $.ui.invalidate('ui.render');
@@ -289,7 +310,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
       // no panel surface: fall back to a text row
       const s = ui.stats;
       const line = (label: string, x: BashStats) =>
-        `${label}: free ${x.free} · ok ${x.ok} (allow ${x.allowed}) · denied ${x.denied} · unreachable ${x.unreachable} · avg ${x.avgMs}ms`;
+        `${label}: free ${x.free} · ok ${x.ok} (allow ${x.allowed}) · asked ${x.asked} (✓${x.approved} ✗${x.rejected}) · denied ${x.denied} · unreachable ${x.unreachable} · avg ${x.avgMs}ms`;
       return { text: `${line('session', s.session)}\n${line('all-time', s.all)}` };
     }
   });
@@ -333,6 +354,17 @@ export const register: Register = (on: On, options: PluginOptions) => {
   on('tool.call', async ($, e, next) => {
     const result = await next(e);
     await refresh($, ui);
+    try {
+      // an asked call settles once you answered the prompt
+      const answer = rowCache.get(e.tool_use_id)?.startsWith('? ') ? askAnswer(result) : undefined;
+      if (answer) {
+        const session = await $.session.id();
+        await appendDecision($, { feature: e.tool === 'Bash' ? 'bash' : 'file', action: answer, session, tool_use_id: e.tool_use_id }, `"tool_use_id":"${e.tool_use_id}"`);
+        await refresh($, ui);
+      }
+    } catch {
+      // decoration
+    }
     return result;
   });
 
@@ -363,7 +395,6 @@ export const register: Register = (on: On, options: PluginOptions) => {
     return next({ ...e, props: { ...e.props, modes: [...e.props.modes, ui.footer] } });
   });
 
-  const GUARDED = new Set(['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read']);
   type Parts = { Box: Parameters<typeof h>[0]; Text: Parameters<typeof h>[0] };
   const withLines = ({ Box, Text }: Parts, row: RenderElement, lines: readonly string[]): RenderElement =>
     lines.length ? el(Box, { flexDirection: 'column' }, row, ...lines.map((l) => h(Text, { dimColor: true, wrap: 'wrap' }, `  ${l}`))) : row;

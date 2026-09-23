@@ -55,6 +55,28 @@ export function parseLog(text: string): LogEntry[] {
 export const BASH_FREE = new Set(['free', 'not-asked', 'passthrough']);
 export const BASH_OK = new Set(['ok', 'allow', 'fast-lane', 'unsure', 'pass']);
 export const BASH_ASKED = new Set(['asked']);
+/** Written by the UI module once an asked call settled: the user's answer at the prompt. */
+export const ASK_ANSWERS = { 'ask-approved': 'you approved', 'ask-rejected': 'you rejected' } as const;
+
+/**
+ * Your answer to an asked call, read off how the call settled: a rejection
+ * comes back as an error with Claude Code's rejection text; a call that ran
+ * (even one that then failed) was approved. Refused with jevgate's own reason
+ * means nobody was asked (headless, dontAsk): no answer.
+ */
+export function askAnswer(result: unknown): keyof typeof ASK_ANSWERS | undefined {
+  const r = (result ?? {}) as { deny?: unknown; isError?: unknown; text?: unknown; result?: unknown };
+  const text = typeof r.text === 'string' ? r.text : typeof r.result === 'string' ? r.result : typeof r.deny === 'string' ? r.deny : '';
+  if (/^(Error: )?jevgate:/.test(text)) return undefined;
+  if ((r.isError || r.deny) && /doesn't want to proceed with this tool use|User rejected tool use/i.test(text)) return 'ask-rejected';
+  return 'ask-approved';
+}
+
+/** The flags of a guard entry, one per fact: `deletes local_no_copy, not requested` is two. Older single names pass through. */
+export function flagsOf(e: LogEntry): string[] {
+  const c = e.category ?? e.reason ?? '?';
+  return (e.facts ? c.split(', ') : [c]).map((f) => (e.feature === 'file' ? 'file:' : '') + f);
+}
 export const BASH_DENIED = new Set(['denied', 'unreachable']);
 
 export type Tally = { free: number; ok: number; asked: number; denied: number; blocks: number; agentDenies: number };
@@ -136,6 +158,13 @@ export type BashStats = {
   allowed: number;
   /** Asked the user (a real prompt, in bypass mode too). */
   asked: number;
+  /** Of `asked`, your answer at the prompt; the rest are pending or predate the record. */
+  approved: number;
+  rejected: number;
+  /** Of `asked`, those the gateway in front of Jev blocked, not a fact. */
+  blocked: number;
+  /** Asked entries per flag, most frequent first. */
+  askedBy: [string, number][];
   denied: number;
   unreachable: number;
   /** Denied entries per category, most frequent first. */
@@ -149,8 +178,10 @@ export type BashStats = {
 };
 
 export function bashStats(entries: readonly LogEntry[], session?: string): BashStats {
-  const s: BashStats = { free: 0, ok: 0, allowed: 0, asked: 0, denied: 0, unreachable: 0, categories: [], avgMs: 0, msRecent: [], blocks: 0, agentDenies: 0 };
+  const s: BashStats = { free: 0, ok: 0, allowed: 0, asked: 0, approved: 0, rejected: 0, blocked: 0, askedBy: [], denied: 0, unreachable: 0, categories: [], avgMs: 0, msRecent: [], blocks: 0, agentDenies: 0 };
   const cats = new Map<string, number>();
+  const asks = new Map<string, number>();
+  const bump = (m: Map<string, number>, e: LogEntry) => { for (const f of flagsOf(e)) m.set(f, (m.get(f) ?? 0) + 1); };
   let msSum = 0;
   let msN = 0;
   for (const e of entries) {
@@ -159,15 +190,19 @@ export function bashStats(entries: readonly LogEntry[], session?: string): BashS
     if (e.feature === 'agent' && e.action === 'deny') s.agentDenies++;
     if (e.feature !== 'bash' && e.feature !== 'file') continue;
     if (e.feature === 'file' && e.action === 'free') continue; // in-project writes are not interesting
+    if (e.action === 'ask-approved') { s.approved++; continue; }
+    if (e.action === 'ask-rejected') { s.rejected++; continue; }
     if (BASH_FREE.has(e.action)) s.free++;
     else if (BASH_OK.has(e.action)) {
       s.ok++;
       if (e.action === 'allow') s.allowed++;
-    } else if (BASH_ASKED.has(e.action)) s.asked++;
-    else if (e.action === 'denied') {
+    } else if (BASH_ASKED.has(e.action)) {
+      s.asked++;
+      if (e.category === 'blocked') s.blocked++;
+      else bump(asks, e);
+    } else if (e.action === 'denied') {
       s.denied++;
-      const c = (e.feature === 'file' ? 'file:' : '') + (e.category ?? e.reason ?? '?');
-      cats.set(c, (cats.get(c) ?? 0) + 1);
+      bump(cats, e);
     } else if (e.action === 'unreachable') s.unreachable++;
     if (typeof e.ms === 'number' && (BASH_OK.has(e.action) || BASH_ASKED.has(e.action) || e.action === 'denied')) {
       msSum += e.ms;
@@ -177,6 +212,7 @@ export function bashStats(entries: readonly LogEntry[], session?: string): BashS
     }
   }
   s.categories = [...cats].sort((a, b) => b[1] - a[1]);
+  s.askedBy = [...asks].sort((a, b) => b[1] - a[1]);
   s.avgMs = msN ? Math.round(msSum / msN) : 0;
   return s;
 }
@@ -192,11 +228,14 @@ export function formatStats(session: BashStats, all: BashStats, sessionId?: stri
   const row = (label: string, s: BashStats) => {
     const total = s.free + judged(s);
     const pct = (n: number) => (total ? `${Math.round((100 * n) / total)}%` : '-');
-    return `${label.padEnd(9)} free ${String(s.free).padStart(5)} (${pct(s.free).padStart(4)})  ok ${String(s.ok).padStart(5)} (allow ${s.allowed})  asked ${String(s.asked).padStart(4)}  denied ${String(s.denied).padStart(4)}  unreachable ${String(s.unreachable).padStart(3)}  avg ${s.avgMs}ms  done-check ✗${s.blocks}  subagent ⇢${s.agentDenies}`;
+    return `${label.padEnd(9)} free ${String(s.free).padStart(5)} (${pct(s.free).padStart(4)})  ok ${String(s.ok).padStart(5)} (allow ${s.allowed})  asked ${String(s.asked).padStart(4)} (✓${s.approved} ✗${s.rejected})  denied ${String(s.denied).padStart(4)}  unreachable ${String(s.unreachable).padStart(3)}  avg ${s.avgMs}ms  done-check ✗${s.blocks}  subagent ⇢${s.agentDenies}`;
   };
   const lines = ['jevgate guard (bash + file tools)', row(`session${sessionId ? '' : '*'}`, session), row('all-time', all)];
   if (all.categories.length) {
-    lines.push('denied by category (all-time): ' + all.categories.map(([c, n]) => `${c} ${n}`).join(', '));
+    lines.push('denied by flag (all-time): ' + all.categories.map(([c, n]) => `${c} ${n}`).join(', '));
+  }
+  if (all.askedBy.length) {
+    lines.push('asked by flag (all-time): ' + all.askedBy.map(([c, n]) => `${c} ${n}`).join(', '));
   }
   if (!sessionId) lines.push('* no session id in the log; session row is empty');
   return lines.join('\n');

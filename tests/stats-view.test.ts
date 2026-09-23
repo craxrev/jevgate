@@ -4,7 +4,7 @@ import { bar, spark, statsLines } from '../src/stats-view.ts';
 import type { BashStats } from '../src/ui-model.ts';
 
 const stats = (over: Partial<BashStats> = {}): BashStats => ({
-  free: 22, ok: 28, allowed: 10, asked: 3, denied: 4, unreachable: 0, categories: [['exfiltrates', 2], ['reads_secrets', 1]], avgMs: 900, msRecent: [800, 1200, 400], blocks: 0, agentDenies: 1, ...over,
+  free: 22, ok: 28, allowed: 10, asked: 3, approved: 2, rejected: 1, blocked: 0, askedBy: [['deletes local_no_copy', 3]], denied: 4, unreachable: 0, categories: [['exfiltrates', 2], ['reads_secrets', 1]], avgMs: 900, msRecent: [800, 1200, 400], blocks: 0, agentDenies: 1, ...over,
 });
 
 test('bar fills proportionally and clamps', () => {
@@ -36,15 +36,20 @@ test('statsLines fits the pane width and carries the styles', () => {
   assert.ok(lines.some((l) => l.text.includes('asked   flagged, you decided')));
   assert.equal(denied.color, 'red');
   assert.ok(!lines.some((l) => l.text.trimStart().startsWith('unreachable')), 'zero unreachable is hidden');
-  const avoided = lines[lines.findIndex((l) => l.text === 'Classifier passes avoided') + 2]!;
-  assert.match(avoided.text, /17 of 35 judged/);
+  assert.equal(lines[lines.findIndex((l) => l.text === 'Your answers to asks') + 1]!.text, ' approved 2 · rejected 1');
+  assert.ok(!lines.some((l) => l.text === 'Not judged by Jev'), 'hidden when Jev judged everything');
+  assert.ok(lines.some((l) => l.text === 'Asked by flag · all-time'));
+  assert.ok(lines.some((l) => l.text.includes('deletes local_no_copy') && l.color === 'yellow'));
+  const fallback = statsLines({ session: stats({ unreachable: 2, blocked: 1 }), all: stats(), width: 44, entries: 1 });
+  assert.ok(fallback.some((l) => l.text === ' handed to Claude Code 2 (Jev unreachable)'));
+  assert.ok(fallback.some((l) => l.text === ' asked 1 (gateway blocked the request)'));
   assert.ok(lines.some((l) => l.text.includes('exfiltrates') && l.color === 'red'));
   assert.match(lines[lines.length - 2]!.text, /subagent ⇢1$/);
   assert.match(lines[lines.length - 1]!.text, /400 log entries · Esc closes/);
 });
 
 test('statsLines with nothing logged still renders', () => {
-  const empty = stats({ free: 0, ok: 0, allowed: 0, asked: 0, denied: 0, categories: [], avgMs: 0, msRecent: [], agentDenies: 0 });
+  const empty = stats({ free: 0, ok: 0, allowed: 0, asked: 0, approved: 0, rejected: 0, askedBy: [], denied: 0, categories: [], avgMs: 0, msRecent: [], agentDenies: 0 });
   const lines = statsLines({ session: empty, all: empty, width: 36, entries: 0 });
   assert.ok(lines.some((l) => l.text === 'Nothing denied yet'));
   assert.ok(lines.every((l) => typeof l.text === 'string'));

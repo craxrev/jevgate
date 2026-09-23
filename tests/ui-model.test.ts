@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseLog, tally, statusText, footerLabel, bashRowText, groupSummary, kb, bashStats, latestSession, formatStats } from '../src/ui-model.ts';
+import { parseLog, tally, statusText, footerLabel, bashRowText, groupSummary, askAnswer, kb, bashStats, latestSession, formatStats } from '../src/ui-model.ts';
 
 const scores = (over: Record<string, number>) => ({
   destroys_uncommitted_work: 0.02, deletes_outside_repo: 0.02, rewrites_shared_history: 0.02, deploys_or_publishes: 0.02,
@@ -17,6 +17,8 @@ const log = [
   { ts: 't', feature: 'bash', action: 'not-asked', reason: 'file-write', session: 's0', tool_use_id: 'f', command: 'rm x' },
   { ts: 't', feature: 'bash', action: 'asked', session: 's1', tool_use_id: 'h', category: 'deletes local_no_copy', facts: { deletes: 'local_no_copy' }, scores: {}, ms: 410 },
   { ts: 't', feature: 'bash', action: 'allow', session: 's1', tool_use_id: 'i', facts: { deletes: 'none' }, scores: {}, ms: 350 },
+  { ts: 't', feature: 'bash', action: 'ask-approved', session: 's1', tool_use_id: 'h' },
+  { ts: 't', feature: 'bash', action: 'denied', session: 's1', tool_use_id: 'j', category: 'deletes remote, not requested', facts: { deletes: 'remote' }, scores: {}, ms: 500 },
   { ts: 't', feature: 'done', action: 'block', session: 's1' },
   { ts: 't', feature: 'agent', action: 'deny', session: 's2' },
 ]
@@ -24,11 +26,11 @@ const log = [
   .join('\n');
 
 test('parseLog skips junk lines', () => {
-  assert.equal(parseLog('garbage\n' + log + '\n{bad').length, 11);
+  assert.equal(parseLog('garbage\n' + log + '\n{bad').length, 13);
 });
 
 test('tally counts per session; free is counted apart, unreachable is a deny, old names fold into ok', () => {
-  assert.deepEqual(tally(parseLog(log), 's1'), { free: 1, ok: 3, asked: 1, denied: 2, blocks: 1, agentDenies: 0 });
+  assert.deepEqual(tally(parseLog(log), 's1'), { free: 1, ok: 3, asked: 1, denied: 3, blocks: 1, agentDenies: 0 });
   assert.deepEqual(tally(parseLog(log), 's0'), { free: 1, ok: 1, asked: 0, denied: 0, blocks: 0, agentDenies: 0 });
   assert.equal(tally(parseLog(log), 's2').agentDenies, 1);
 });
@@ -61,16 +63,20 @@ test('bashRowText: ok shows the top two scores, denied the category and score, f
 test('bashStats per session and all-time, with denied categories and mean latency', () => {
   const entries = parseLog(log);
   const s1 = bashStats(entries, 's1');
-  assert.deepEqual(s1, { free: 1, ok: 3, allowed: 2, asked: 1, denied: 1, unreachable: 1, categories: [['exfiltrates', 1]], avgMs: 456, msRecent: [340, 300, 880, 410, 350], blocks: 1, agentDenies: 0 });
+  assert.deepEqual(s1, {
+    free: 1, ok: 3, allowed: 2, asked: 1, approved: 1, rejected: 0, blocked: 0, askedBy: [['deletes local_no_copy', 1]], denied: 2, unreachable: 1,
+    categories: [['exfiltrates', 1], ['deletes remote', 1], ['not requested', 1]], avgMs: 463, msRecent: [340, 300, 880, 410, 350, 500], blocks: 1, agentDenies: 0,
+  });
   const all = bashStats(entries);
   assert.equal(all.free, 2);
   assert.equal(all.ok, 4);
   assert.equal(all.agentDenies, 1);
   assert.equal(latestSession(entries), 's2');
   const text = formatStats(s1, all, 's1');
-  assert.match(text, /^jevgate guard \(bash \+ file tools\)\nsession   free     1 \( 14%\)  ok     3 \(allow 2\)  asked    1  denied    1  unreachable   1  avg 456ms/);
+  assert.match(text, /^jevgate guard \(bash \+ file tools\)\nsession   free     1 \( 13%\)  ok     3 \(allow 2\)  asked    1 \(✓1 ✗0\)  denied    2  unreachable   1  avg 463ms/);
   assert.match(text, /all-time  free     2/);
-  assert.match(text, /denied by category \(all-time\): exfiltrates 1/);
+  assert.match(text, /denied by flag \(all-time\): exfiltrates 1, deletes remote 1, not requested 1/);
+  assert.match(text, /asked by flag \(all-time\): deletes local_no_copy 1/);
 });
 
 test('kb formatting', () => {
@@ -82,4 +88,12 @@ test('groupSummary lists asks and denials, then counts allows', () => {
   assert.deepEqual(groupSummary(['▸ jevgate allow · nothing flagged · 300ms', undefined, '▸ jevgate allow · nothing flagged · 200ms']), ['▸ jevgate allow ×2']);
   assert.deepEqual(groupSummary(['? jevgate asked · deletes local_no_copy · 400ms', '▸ jevgate allow · nothing flagged · 1ms']), ['? jevgate asked · deletes local_no_copy · 400ms', '▸ jevgate allow ×1']);
   assert.deepEqual(groupSummary([undefined]), []);
+});
+
+test('askAnswer reads your answer off how an asked call settled', () => {
+  assert.equal(askAnswer({ result: { stdout: '' }, isError: false }), 'ask-approved');
+  assert.equal(askAnswer({ result: 'Error: Exit code 1', text: 'Exit code 1', isError: true }), 'ask-approved', 'ran, then failed');
+  assert.equal(askAnswer({ text: "The user doesn't want to proceed with this tool use. The tool use was rejected", isError: true }), 'ask-rejected');
+  assert.equal(askAnswer({ result: 'User rejected tool use', isError: true }), 'ask-rejected');
+  assert.equal(askAnswer({ result: 'Error: jevgate: asking · deletes local_no_copy', text: 'jevgate: asking · deletes local_no_copy', isError: true }), undefined, 'refused with no one to ask');
 });

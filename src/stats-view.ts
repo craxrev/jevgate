@@ -49,17 +49,23 @@ export function statsLines(v: StatsView): Line[] {
   if (s.unreachable) row('unreachable', s.unreachable, st, COLORS.unreachable);
   if (s.ok - s.allowed) row('unsure', s.ok - s.allowed, st, COLORS.ok);
   out.push({ text: ' free    read-only, never judged', dim: true });
-  out.push({ text: ' allow   nothing flagged, classifier skipped', dim: true });
+  out.push({ text: ' allow   nothing flagged', dim: true });
   out.push({ text: ' asked   flagged, you decided', dim: true });
   out.push({ text: ' denied  refused', dim: true });
   out.push({ text: '' });
 
-  const judged = s.ok + s.asked + s.denied + s.unreachable;
-  const skipped = s.allowed + s.asked + s.denied;
-  out.push({ text: 'Classifier passes avoided', bold: true });
-  out.push({ text: ` ${bar(skipped, judged, barW + 12)} ${pct(skipped, judged).padStart(4)}`, color: COLORS.allow });
-  out.push({ text: ` ${skipped} of ${judged} judged commands settled by Jev`, dim: true });
-  out.push({ text: '' });
+  if (s.asked) {
+    const pending = s.asked - s.approved - s.rejected;
+    out.push({ text: 'Your answers to asks', bold: true });
+    out.push({ text: ` approved ${s.approved} · rejected ${s.rejected}${pending > 0 ? ` · unanswered ${pending}` : ''}`, dim: true });
+    out.push({ text: '' });
+  }
+  if (s.unreachable || s.blocked) {
+    out.push({ text: 'Not judged by Jev', bold: true });
+    if (s.unreachable) out.push({ text: ` handed to Claude Code ${s.unreachable} (Jev unreachable)`, color: COLORS.unreachable });
+    if (s.blocked) out.push({ text: ` asked ${s.blocked} (gateway blocked the request)`, color: COLORS.asked });
+    out.push({ text: '' });
+  }
 
   out.push({ text: 'Jev latency', bold: true });
   const sp = spark(s.msRecent.slice(-Math.max(8, barW)));
@@ -74,12 +80,17 @@ export function statsLines(v: StatsView): Line[] {
   out.push({ text: ` unsure ${a.ok - a.allowed} · unreachable ${a.unreachable}`, dim: true });
   out.push({ text: '' });
 
-  out.push({ text: a.categories.length ? 'Denied by category · all-time' : 'Nothing denied yet', bold: true });
-  const maxCat = Math.max(1, ...a.categories.map(([, n]) => n));
-  for (const [c, n] of a.categories.slice(0, 8)) {
-    out.push({ text: ` ${c.replace(/^file:/, '✎ ').padEnd(28)}${bar(n, maxCat, Math.max(4, barW - 16))} ${String(n).padStart(3)}`, color: COLORS.denied });
-  }
-  out.push({ text: '' });
+  const flags = (title: string, rows: [string, number][], color: string) => {
+    out.push({ text: title, bold: true });
+    const max = Math.max(1, ...rows.map(([, n]) => n));
+    for (const [c, n] of rows.slice(0, 6)) {
+      out.push({ text: ` ${c.replace(/^file:/, '✎ ').slice(0, 27).padEnd(28)}${bar(n, max, Math.max(4, barW - 16))} ${String(n).padStart(3)}`, color });
+    }
+    out.push({ text: '' });
+  };
+  if (a.categories.length) flags('Denied by flag · all-time', a.categories, COLORS.denied);
+  else out.push({ text: 'Nothing denied yet', bold: true }, { text: '' });
+  if (a.askedBy.length) flags('Asked by flag · all-time', a.askedBy, COLORS.asked);
   out.push({ text: ` done-check ✗${s.blocks} · subagent ⇢${s.agentDenies}`, dim: true });
   out.push({ text: ` ${v.entries} log entries · Esc closes`, dim: true });
   return out;

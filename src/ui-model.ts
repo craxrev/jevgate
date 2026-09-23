@@ -116,6 +116,14 @@ export function bashRowText(e: LogEntry): string | undefined {
   return undefined;
 }
 
+/** The dim line under a collapsed group: every ask, denial or failure in it, then how many ran allowed. */
+export function groupSummary(lines: readonly (string | undefined)[]): string[] {
+  const out = lines.filter((l): l is string => !!l && !l.startsWith('▸'));
+  const allowed = lines.filter((l) => l?.startsWith('▸ jevgate allow')).length;
+  if (allowed) out.push(`▸ jevgate allow ×${allowed}`);
+  return out;
+}
+
 export function kb(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }

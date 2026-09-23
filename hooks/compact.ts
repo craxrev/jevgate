@@ -31,6 +31,7 @@ import {
   tally,
   footerLabel,
   bashRowText,
+  groupSummary,
   parseLog,
   kb,
   bashStats,
@@ -113,12 +114,31 @@ async function appendDecision($: Host, entry: Record<string, unknown>): Promise<
 type UiRuntime = {
   compactions: CompactionReport[];
   rowCache: Map<string, string | undefined>;
+  /** Calls drawn inside a group: their expanded rows are ToolUse rows, which get the line. */
+  grouped: Set<string>;
   footer: string | undefined;
   stats?: { session: BashStats; all: BashStats; sessionId: string; entries: number };
 };
 
-function cacheRows(ui: UiRuntime, entries: readonly LogEntry[]): void {
-  for (const en of entries) if (en.tool_use_id) ui.rowCache.set(en.tool_use_id, bashRowText(en));
+/** Fills the row lines from the log; true when a line appeared or changed, so drawn rows need a redraw. */
+function cacheRows(ui: UiRuntime, entries: readonly LogEntry[]): boolean {
+  let changed = false;
+  for (const en of entries) {
+    if (!en.tool_use_id) continue;
+    const line = bashRowText(en);
+    if (ui.rowCache.get(en.tool_use_id) !== line) changed ||= line !== undefined;
+    ui.rowCache.set(en.tool_use_id, line);
+  }
+  return changed;
+}
+
+/** The dim line for one call, reading the log when the call is not cached yet. */
+async function lineFor($: Host, ui: UiRuntime, id: string): Promise<string | undefined> {
+  if (!ui.rowCache.has(id)) {
+    cacheRows(ui, await readLog($));
+    if (!ui.rowCache.has(id)) ui.rowCache.set(id, undefined); // refresh() fills it once the log has it
+  }
+  return ui.rowCache.get(id);
 }
 
 /** Re-read the decisions log; redraw the footer when the tally moved. Decoration: never throws. */
@@ -126,8 +146,8 @@ async function refresh($: Host, ui: UiRuntime): Promise<void> {
   try {
     const [entries, session] = await Promise.all([readLog($), $.session.id()]);
     const label = footerLabel(tally(entries, session), ui.compactions.length);
-    cacheRows(ui, entries);
-    let changed = label !== ui.footer;
+    const rowsChanged = cacheRows(ui, entries);
+    let changed = label !== ui.footer || rowsChanged;
     ui.footer = label;
     if (ui.stats && ui.stats.entries !== entries.length) {
       ui.stats = { session: bashStats(entries, session), all: bashStats(entries), sessionId: session, entries: entries.length };
@@ -142,7 +162,7 @@ async function refresh($: Host, ui: UiRuntime): Promise<void> {
 export const register: Register = (on: On, options: PluginOptions) => {
   const cfg = fromRaw(options as Record<string, string | number | boolean | readonly string[]>);
   let compacting = false;
-  const ui: UiRuntime = { compactions: [], rowCache: new Map(), footer: undefined };
+  const ui: UiRuntime = { compactions: [], rowCache: new Map(), grouped: new Set(), footer: undefined };
   const compactions = ui.compactions;
   const rowCache = ui.rowCache;
 
@@ -343,23 +363,46 @@ export const register: Register = (on: On, options: PluginOptions) => {
     return next({ ...e, props: { ...e.props, modes: [...e.props.modes, ui.footer] } });
   });
 
-  for (const tool of ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read']) {
+  const GUARDED = new Set(['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read']);
+  type Parts = { Box: Parameters<typeof h>[0]; Text: Parameters<typeof h>[0] };
+  const withLines = ({ Box, Text }: Parts, row: RenderElement, lines: readonly string[]): RenderElement =>
+    lines.length ? el(Box, { flexDirection: 'column' }, row, ...lines.map((l) => h(Text, { dimColor: true, wrap: 'wrap' }, `  ${l}`))) : row;
+
+  // A standalone row: the line under its result.
+  for (const tool of GUARDED) {
     on('ui.render', { component: 'ToolResult', props: { tool } }, async ($, e, next) => {
+      const engineRow = await next(e);
+      try {
+        const line = await lineFor($, ui, e.requestId);
+        return line ? withLines($.ui.resolve(e), engineRow, [line]) : engineRow;
+      } catch {
+        return engineRow;
+      }
+    });
+  }
+
+  // A folded run of calls (`Ran 2 shell commands`): one summary line; expanded, each row gets its own.
+  on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
     const engineRow = await next(e);
     try {
-      if (!rowCache.has(e.requestId)) {
-        cacheRows(ui, await readLog($));
-        if (!rowCache.has(e.requestId)) rowCache.set(e.requestId, undefined);
-      }
-      const line = rowCache.get(e.requestId);
-      if (!line) return engineRow;
-      const { Box, Text } = $.ui.resolve(e);
-      return el(Box, { flexDirection: 'column' }, engineRow, h(Text, { dimColor: true, wrap: 'wrap' }, `  ${line}`));
+      const ids = e.props.calls.filter((c) => GUARDED.has(c.tool) && c.tool_use_id).map((c) => c.tool_use_id!);
+      for (const id of ids) ui.grouped.add(id);
+      if (e.props.isExpanded || !ids.length) return engineRow;
+      return withLines($.ui.resolve(e), engineRow, groupSummary(await Promise.all(ids.map((id) => lineFor($, ui, id)))));
     } catch {
       return engineRow;
     }
-    });
-  }
+  });
+  on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
+    const engineRow = await next(e);
+    try {
+      if (!ui.grouped.has(e.props.tool_use_id)) return engineRow;
+      const line = await lineFor($, ui, e.props.tool_use_id);
+      return line ? withLines($.ui.resolve(e), engineRow, [line]) : engineRow;
+    } catch {
+      return engineRow;
+    }
+  });
 
   on('ui.render', { component: 'Pane', requestId: PANE_ID }, async ($, e, next) => {
     const report = compactions[compactions.length - 1];

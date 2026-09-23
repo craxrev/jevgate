@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseLog, tally, statusText, footerLabel, bashRowText, kb, bashStats, latestSession, formatStats } from '../src/ui-model.ts';
+import { parseLog, tally, statusText, footerLabel, bashRowText, groupSummary, kb, bashStats, latestSession, formatStats } from '../src/ui-model.ts';
 
 const scores = (over: Record<string, number>) => ({
   destroys_uncommitted_work: 0.02, deletes_outside_repo: 0.02, rewrites_shared_history: 0.02, deploys_or_publishes: 0.02,
@@ -76,4 +76,10 @@ test('bashStats per session and all-time, with denied categories and mean latenc
 test('kb formatting', () => {
   assert.equal(kb(300), '300');
   assert.equal(kb(8200), '8.2k');
+});
+
+test('groupSummary lists asks and denials, then counts allows', () => {
+  assert.deepEqual(groupSummary(['▸ jevgate allow · nothing flagged · 300ms', undefined, '▸ jevgate allow · nothing flagged · 200ms']), ['▸ jevgate allow ×2']);
+  assert.deepEqual(groupSummary(['? jevgate asked · deletes local_no_copy · 400ms', '▸ jevgate allow · nothing flagged · 1ms']), ['? jevgate asked · deletes local_no_copy · 400ms', '▸ jevgate allow ×1']);
+  assert.deepEqual(groupSummary([undefined]), []);
 });

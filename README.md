@@ -41,8 +41,9 @@ Under each judged command, a dim line:
 In the footer, a tally: `jev ✓5 ⊘1 ✗1 ⇢1 ⇊2` (judged and run, denied, done-check
 blocks, subagents refused, compactions).
 
-`/jevgate` opens a panel: bars per outcome for this session and all time,
-classifier passes avoided, Jev latency, denials by category. It refreshes while open.
+`/jevgate` opens a panel. It refreshes while open.
+
+<img src="docs/jevgate-pane.png" alt="The /jevgate panel: bars per outcome for this session, classifier passes avoided, Jev latency, all-time totals, denials by category" width="520">
 
 ## What it does
 

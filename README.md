@@ -48,7 +48,7 @@ done-check blocks, subagents refused, compactions).
 
 `/jevgate` opens a panel. It refreshes while open.
 
-<img src="docs/jevgate-pane.png" alt="The /jevgate panel: bars per outcome for this session, classifier passes avoided, Jev latency, all-time totals, denials by category" width="520">
+<img src="docs/jevgate-pane.png" alt="The /jevgate panel: bars per outcome for this session, Jev latency, where the time of a Jev call goes, all-time totals, asks by flag" width="520">
 
 ## What it does
 
@@ -96,7 +96,9 @@ If Jev is unreachable (after one retry on a timeout, rate limit or server
 error): in bypass mode commands outside the read-only set are refused, since
 nothing else would check them. In other modes jevgate steps aside and Claude
 Code behaves as before. A few commands (writing `/etc/hosts`, some SQL) are
-blocked by the gateway in front of Jev every time; those are asked.
+blocked by the gateway in front of Jev every time; those are handled the same
+way, except in bypass mode, where they are asked. The panel counts both as
+passed on.
 
 ## Options
 
@@ -214,8 +216,8 @@ under `compactMinReductionRatio`, the built-in summary runs instead.
 - The file guard asks on every whole-file Write over an existing file outside
   the project. Working on another repo from a different folder means many asks.
 - The gateway in front of Jev blocks a few commands by content (`/etc/hosts`,
-  some SQL); they are asked. To do: ask TypeSafe about it.
-- Whether an ask was approved or rejected is not logged yet.
+  some SQL); they are passed on to Claude Code (asked in bypass mode). To do:
+  ask TypeSafe about it.
 - The done-check skips turns that changed no files, but a turn that did still
   gets judged on the whole working-tree diff, older uncommitted changes
   included. To do: snapshot `git diff` when the turn starts and judge only

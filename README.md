@@ -92,7 +92,8 @@ and old tool outputs are cut to their first 300 characters. One Jev call picks
 the few outputs still worth keeping in full. Nothing is rewritten, nothing is
 dropped. Saves less than a summary on text-heavy sessions, around 30–50%.
 At 60% context, after a turn, jevgate asks: trim, the built-in summary, or not
-yet (asked again at the next 10%). `/compact` asks the same, with Cancel. At
+yet (asked again at the next 10%). `/compact` asks the same, with Cancel;
+`/compact <instructions>` runs the built-in summary with them, without asking. At
 Claude Code's own limit its built-in compaction runs, without asking.
 
 If Jev is unreachable (after one retry on a timeout, rate limit or server

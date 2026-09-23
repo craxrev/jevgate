@@ -50,7 +50,7 @@ function harness(answers: (string | undefined)[], percent: { value: number }) {
     settings: { read: async () => ({}) },
   };
   register(on as never, { compactUseJev: false } as never);
-  const compact = (trigger: string) => handlers.get('session.compact')!($, { trigger, messages: [] }, () => { nexts.push(trigger); return { messages: [] }; });
+  const compact = (trigger: string, instructions?: string) => handlers.get('session.compact')!($, { trigger, messages: [], instructions }, () => { nexts.push(trigger); return { messages: [] }; });
   const turn = (agentId?: string) => handlers.get('turn.complete')!($, { agentId }, () => undefined);
   return { compact, turn, asked, nexts };
 }
@@ -95,4 +95,14 @@ test("a subagent's turn never asks", async () => {
   const h = harness([], { value: 80 });
   await h.turn('agent-1');
   assert.equal(h.asked.length, 0);
+});
+
+test('/compact with instructions runs the summary without asking', async () => {
+  const h = harness([], { value: 30 });
+  await h.compact('manual', 'keep the latency discussion');
+  assert.deepEqual(h.nexts, ['manual']);
+  assert.equal(h.asked.length, 0);
+  const blank = harness([CANCEL], { value: 30 });
+  await blank.compact('manual', '  ');
+  assert.equal(blank.asked.length, 1, 'blank instructions still ask');
 });

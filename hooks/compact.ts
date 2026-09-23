@@ -200,7 +200,9 @@ export const register: Register = (on: On, options: PluginOptions) => {
     const session = await $.session.id().catch(() => undefined);
     let choice = chosen;
     chosen = undefined;
-    if (e.trigger === 'manual') {
+    // `/compact <instructions>` is a request for a summary: only the summary can follow them
+    if (e.trigger === 'manual' && e.instructions?.trim()) choice = 'summary';
+    else if (e.trigger === 'manual') {
       choice = choiceOf(await $.ui.ask('Compact how?', { header: 'Compact', options: [TRIM, SUMMARY, CANCEL] }).catch(() => undefined));
       if (choice === 'none') {
         void appendDecision($, { feature: 'compact', action: 'cancelled', session, trigger: e.trigger });
@@ -208,7 +210,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
       }
     }
     if (choice === 'summary') {
-      void appendDecision($, { feature: 'compact', action: 'summary', session, trigger: e.trigger, messages: e.messages.length, reason: 'chosen' });
+      void appendDecision($, { feature: 'compact', action: 'summary', session, trigger: e.trigger, messages: e.messages.length, reason: e.instructions?.trim() ? 'instructions' : 'chosen' });
       return next(e);
     }
 

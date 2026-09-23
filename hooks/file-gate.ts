@@ -79,7 +79,7 @@ async function main(): Promise<void> {
   try {
     const res = await ask(nodeFetch(cfg.timeoutMs), { apiKey: cfg.apiKey, model: cfg.model }, state, FILE_QUESTIONS);
     const d = decideFacts(resolveFacts(res, FILE_FACTS, thresholds(cfg)), rules(cfg, mode), cfg.unsureOutcome);
-    const entry = { ...base, facts: d.facts, scores: rawScores(res, FILE_FACTS), ms: Date.now() - t0 };
+    const entry = { ...base, facts: d.facts, ...(res.retried ? { retried: true } : {}), scores: rawScores(res, FILE_FACTS), ms: Date.now() - t0 };
     if (d.action === 'deny') {
       appendLog(logPath, { ...entry, action: 'denied', category: d.flags.join(', '), reason: d.reason });
       emit(denyOutput(d.reason));

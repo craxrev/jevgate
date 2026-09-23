@@ -60,3 +60,13 @@ test('statsLines with nothing logged still renders', () => {
   assert.ok(lines.some((l) => l.text === ' no judged calls yet'));
   assert.ok(lines.every((l) => typeof l.text === 'string'));
 });
+
+test('spark scales to the 90th percentile, so one outlier does not flatten the rest', () => {
+  const v = [600, 620, 580, 7586, 610, 1200, 600, 640, 590, 605];
+  const line = spark(v);
+  assert.equal(line.length, v.length);
+  assert.equal(line[3], '█');
+  assert.notEqual(line[0], '▁', 'a normal call keeps visible height');
+  assert.equal(spark([]), '');
+  assert.equal(spark([0, 0]), '');
+});

@@ -61,11 +61,14 @@ test('ask retries once after a transient failure, never after a block', async ()
     };
   };
   const a = seq({ status: 503, ok: false, text: '' }, ok);
-  assert.equal((await ask(a.f, { apiKey: 'k' }, 's', {})).model, 'j');
+  const retried = await ask(a.f, { apiKey: 'k' }, 's', {});
+  assert.equal(retried.model, 'j');
+  assert.equal(retried.retried, true);
   assert.equal(a.calls(), 2);
   const b = seq(new Error('aborted'), ok);
   await ask(b.f, { apiKey: 'k' }, 's', {});
   assert.equal(b.calls(), 2);
+  assert.equal((await ask(seq(ok).f, { apiKey: 'k' }, 's', {})).retried, undefined);
   const c = seq({ status: 403, ok: false, text: '<html>' }, ok);
   await assert.rejects(ask(c.f, { apiKey: 'k' }, 's', {}), JevBlockedError);
   assert.equal(c.calls(), 1);

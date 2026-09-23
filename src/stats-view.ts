@@ -17,9 +17,17 @@ export function bar(n: number, total: number, width: number): string {
 }
 
 /** One spark character per value, scaled to the highest. */
+/**
+ * One block per value, scaled to the 90th percentile so a single slow call does
+ * not flatten the rest (above it is a full block); under 10 values, to the highest.
+ */
 export function spark(values: readonly number[]): string {
-  const max = Math.max(0, ...values);
-  if (!values.length || max === 0) return '';
+  if (!values.length) return '';
+  const sorted = [...values].sort((a, b) => a - b);
+  const top = sorted[sorted.length - 1]!;
+  if (top <= 0) return '';
+  const p90 = sorted[Math.floor(0.9 * (sorted.length - 1))]!;
+  const max = values.length < 10 || p90 <= 0 ? top : p90;
   return values.map((v) => SPARK[Math.min(7, Math.floor((v / max) * 7.999))]!).join('');
 }
 

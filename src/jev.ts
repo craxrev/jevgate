@@ -41,6 +41,8 @@ export type JevResponse = {
   model: string;
   answers: Record<string, Answer>;
   usage?: { input_tokens: number; output_tokens: number };
+  /** Set by `ask` when the first try failed transiently and this is the second. */
+  retried?: boolean;
 };
 
 export type FetchInit = { method: string; headers: Record<string, string>; body: string };
@@ -123,7 +125,7 @@ export async function ask(
     return await once();
   } catch (err) {
     if (!(err instanceof JevTransientError) || (opts.retries ?? 1) < 1) throw err;
-    return once();
+    return { ...(await once()), retried: true };
   }
 }
 

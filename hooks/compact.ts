@@ -4,6 +4,7 @@
 //    long tool outputs truncated. Text is never rewritten, calls are never
 //    dropped. Jev only ranks which truncated outputs to restore verbatim.
 // 2. turn.complete: request compaction early, refresh the status line.
+//    turn.start: while a turn runs, redraw within a second of a gate or the done-check deciding.
 // 3. ui.render: a dim line under each judged Bash or file-tool result, and a pane
 //    reporting a compaction.
 // 4. /jevgate: a registered slash command that opens a stats pane, no model
@@ -76,18 +77,22 @@ function toSession(input: readonly SessionMessage[], output: readonly Msg[]): Se
 
 async function logCandidates($: Host): Promise<string[]> {
   const home = (await $.env.get('HOME')) ?? '';
-  return [`${home}/.claude/plugins/data/jevgate-jevgate/decisions.jsonl`, `${home}/.claude/jevgate/decisions.jsonl`];
+  const data = await $.env.get('CLAUDE_PLUGIN_DATA');
+  // the command hooks write to their plugin data dir: `jevgate-jevgate` when installed, `jevgate-inline` under --plugin-dir
+  const dirs = [data, `${home}/.claude/plugins/data/jevgate-jevgate`, `${home}/.claude/plugins/data/jevgate-inline`, `${home}/.claude/jevgate`];
+  return [...new Set(dirs.filter((d): d is string => !!d).map((d) => `${d}/decisions.jsonl`))];
 }
 
-/** The newest entries of the decisions log, oldest first. Missing log = empty. */
+/** The newest entries of every decisions log, merged oldest first. Missing logs = empty. */
 async function readLog($: Host): Promise<LogEntry[]> {
+  const out: LogEntry[] = [];
   for (const p of await logCandidates($)) {
     if (!(await $.fs.exists(p))) continue;
     let text = await $.fs.read(p);
     if (text.length > MAX_LOG_CHARS) text = text.slice(text.length - MAX_LOG_CHARS);
-    return parseLog(text);
+    out.push(...parseLog(text));
   }
-  return [];
+  return out.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
 }
 
 /** Appends one decision line to the same log the command hooks write. `$.fs` has no append, so read + write; best effort. */
@@ -281,6 +286,29 @@ export const register: Register = (on: On, options: PluginOptions) => {
     );
   });
 
+  // No event reaches this module when a command hook decides (the built-in sec-default runs
+  // classic hooks without passing them on), and a done-check block keeps the turn going. So while
+  // a main-loop turn runs (subagents raise no turn.start), look at the logs once a second and redraw when they changed.
+  let ticker: { cancel: () => void } | undefined;
+  let seen = '';
+  on('turn.start', async ($, e, next) => {
+    if (!ticker) {
+      ticker = $.clock.every(1000, () => {
+        void (async () => {
+          try {
+            const stamp = (await Promise.all((await logCandidates($)).map(async (p) => ((await $.fs.exists(p)) ? (await $.fs.stat(p)).mtimeMs : 0)))).join(',');
+            if (stamp === seen) return;
+            seen = stamp;
+            await refresh($, ui);
+          } catch {
+            // decoration
+          }
+        })();
+      });
+    }
+    return next(e);
+  });
+
   // After each guarded call settles, the gate's log entry exists: tick the footer now, not at turn end.
   on('tool.call', async ($, e, next) => {
     const result = await next(e);
@@ -289,6 +317,10 @@ export const register: Register = (on: On, options: PluginOptions) => {
   });
 
   on('turn.complete', async ($, e, next) => {
+    if (!e.agentId) {
+      ticker?.cancel();
+      ticker = undefined;
+    }
     await refresh($, ui);
     if (!cfg.compactEnabled || compacting) return next(e);
     try {

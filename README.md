@@ -91,6 +91,9 @@ few messages.
 and old tool outputs are cut to their first 300 characters. One Jev call picks
 the few outputs still worth keeping in full. Nothing is rewritten, nothing is
 dropped. Saves less than a summary on text-heavy sessions, around 30–50%.
+At 60% context, after a turn, jevgate asks: trim, the built-in summary, or not
+yet (asked again at the next 10%). `/compact` asks the same, with Cancel. At
+Claude Code's own limit its built-in compaction runs, without asking.
 
 If Jev is unreachable (after one retry on a timeout, rate limit or server
 error): in bypass mode commands outside the read-only set are refused, since
@@ -122,11 +125,11 @@ Set in `/plugin configure jevgate`. Every feature has its own switch.
 | `agentEnabled` | on | subagent gate |
 | `agentThreshold` | 0.95 | refuse when the answer is this likely already in context |
 | `compactEnabled` | on | verbatim compaction |
-| `compactAtPercent` | 60 | context usage that triggers compaction |
+| `compactAtPercent` | 60 | context usage at which jevgate asks to compact |
 | `compactPreserveRecent` | 6 | newest messages never touched |
 | `compactTruncateHeadChars` | 300 | characters kept of a truncated output |
 | `compactRestoreTopK` | 5 | outputs Jev may restore in full |
-| `compactMinReductionRatio` | 0.25 | below this saving, use the built-in summary |
+| `compactMinReductionRatio` | 0.25 | below this saving, the conversation is kept as is |
 | `apiKey`, `model` | env, `jev-latest` | TypeSafe key and model |
 
 A rules file changes the outcome of any fact value, and can differ per
@@ -204,7 +207,8 @@ message, newest `compactPreserveRecent` messages, all Edit/Write results). One
 Jev Choice question over the candidate ids, with a `none` option, ranks them
 against your last three messages; anything with at least `compactRestoreMinScore`
 of the probability, up to `compactRestoreTopK`, is kept in full. If the saving is
-under `compactMinReductionRatio`, the built-in summary runs instead.
+under `compactMinReductionRatio`, the conversation is kept as is and a notice
+says why.
 
 </details>
 

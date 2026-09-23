@@ -14,6 +14,7 @@
 // The validator follows `$` only within this file, so all of it lives here.
 import type { EngineInterface, On, PluginOptions, Register, RenderElement, SessionMessage } from 'claude-code';
 import { fromRaw, type Config } from '../src/config.ts';
+import { CANCEL, LATER, SUMMARY, TRIM, choiceOf, snoozeTo, type CompactChoice } from '../src/compact-ask.ts';
 import { ask, type FetchLike } from '../src/jev.ts';
 import {
   candidates,
@@ -183,26 +184,37 @@ async function refresh($: Host, ui: UiRuntime): Promise<void> {
 export const register: Register = (on: On, options: PluginOptions) => {
   const cfg = fromRaw(options as Record<string, string | number | boolean | readonly string[]>);
   let compacting = false;
+  /** Asked again only at this context percent after Not yet; 0 when not snoozed. */
+  let snoozeUntil = 0;
+  /** The answer given at the reminder, for the compaction it starts. */
+  let chosen: CompactChoice | undefined;
   const ui: UiRuntime = { compactions: [], rowCache: new Map(), grouped: new Set(), footer: undefined };
   const compactions = ui.compactions;
   const rowCache = ui.rowCache;
 
   on('session.compact', async ($, e, next) => {
     if (!cfg.compactEnabled) return next(e);
+    // At Claude Code's own limit (and its precompute for it) Claude Code compacts: jevgate asked at compactAtPercent.
+    if (e.trigger === 'auto' || e.trigger === 'precompute') return next(e);
     const t0 = Date.now();
-
-    // Near the ceiling (engine's own auto-compact, or its precompute for it) a
-    // lossy summary beats hitting the wall. Anywhere else there is room, so when
-    // nothing can be trimmed the conversation simply stays as it is.
-    const nearCeiling = e.trigger === 'auto' || e.trigger === 'precompute';
     const session = await $.session.id().catch(() => undefined);
+    let choice = chosen;
+    chosen = undefined;
+    if (e.trigger === 'manual') {
+      choice = choiceOf(await $.ui.ask('Compact how?', { header: 'Compact', options: [TRIM, SUMMARY, CANCEL] }).catch(() => undefined));
+      if (choice === 'none') {
+        void appendDecision($, { feature: 'compact', action: 'cancelled', session, trigger: e.trigger });
+        return { skip: 'jevgate: compaction cancelled' };
+      }
+    }
+    if (choice === 'summary') {
+      void appendDecision($, { feature: 'compact', action: 'summary', session, trigger: e.trigger, messages: e.messages.length, reason: 'chosen' });
+      return next(e);
+    }
+
     const rank: Record<string, unknown> = {};
     const bail = (why: string) => {
-      void appendDecision($, { feature: 'compact', action: nearCeiling ? 'summary' : 'kept-as-is', session, trigger: e.trigger, messages: e.messages.length, reason: why, ...rank, ms: Date.now() - t0 });
-      if (nearCeiling) {
-        $.ui.toast(`jevgate: built-in summary (${why})`, { timeoutMs: 8000 });
-        return next(e);
-      }
+      void appendDecision($, { feature: 'compact', action: 'kept-as-is', session, trigger: e.trigger, messages: e.messages.length, reason: why, ...rank, ms: Date.now() - t0 });
       $.ui.toast(`jevgate: ${why}, conversation kept as is`, { timeoutMs: 8000 });
       return { skip: `jevgate: ${why}` };
     };
@@ -380,12 +392,28 @@ export const register: Register = (on: On, options: PluginOptions) => {
       ticker = undefined;
     }
     await refresh($, ui);
-    if (!cfg.compactEnabled || compacting) return next(e);
+    // only between the main agent's turns: a subagent's turn ends inside the main one
+    if (!cfg.compactEnabled || compacting || e.agentId) return next(e);
     try {
       const { context } = await $.session.usage();
-      if ((context.percent ?? 0) >= cfg.compactAtPercent) {
+      const pct = context.percent ?? 0;
+      if (pct < cfg.compactAtPercent) snoozeUntil = 0;
+      else if (pct >= snoozeUntil) {
         compacting = true;
-        await $.session.compact();
+        const c = choiceOf(
+          await $.ui.ask(`Context is ${Math.round(pct)}% full. Compact now?`, { header: 'Compact', options: [TRIM, SUMMARY, LATER] }).catch(() => undefined),
+        );
+        // asked once per 10% step: a trim that frees too little does not ask again next turn
+        snoozeUntil = snoozeTo(pct);
+        if (c === 'none') {
+          const session = await $.session.id().catch(() => undefined);
+          void appendDecision($, { feature: 'compact', action: 'snoozed', session, trigger: 'plugin', percent: Math.round(pct), until: snoozeUntil });
+          $.ui.toast(`jevgate: asking again at ${snoozeUntil}%`, { timeoutMs: 6000 });
+        } else {
+          chosen = c;
+          await $.session.compact();
+          chosen = undefined;
+        }
       }
     } catch (err) {
       $.ui.log(`jevgate: early compact skipped (${err instanceof Error ? err.message : String(err)})`);

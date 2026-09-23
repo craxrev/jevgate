@@ -1,6 +1,6 @@
 {
   "name": "jevgate",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "Jev-backed gates for Claude Code: bash guard for bypass mode, file guard, done-check, subagent gate, verbatim compaction. Each feature toggles independently.",
   "license": "MIT",
   "author": {
@@ -123,7 +123,7 @@
     "compactAtPercent": {
       "type": "number",
       "title": "Compaction trigger percent",
-      "description": "Context usage at which jevgate requests compaction itself.",
+      "description": "Context usage at which jevgate asks whether to compact (trim, built-in summary, or not yet).",
       "default": 60
     },
     "compactPreserveRecent": {
@@ -159,7 +159,7 @@
     "compactMinReductionRatio": {
       "type": "number",
       "title": "Compaction: minimum reduction",
-      "description": "Below this fraction saved, fall back to the built-in summary.",
+      "description": "Below this fraction saved, the conversation is kept as is.",
       "default": 0.25
     }
   }

@@ -2,3 +2,7 @@ node_modules/
 *.log
 .DS_Store
 __pycache__/
+
+# written by /plugin-types from the local setup (your MCP servers, enabled plugins)
+types/claude-code-mcp.d.ts
+types/claude-code-plugins.d.ts

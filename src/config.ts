@@ -184,5 +184,5 @@ export function knownHosts(cfg: Config): string[] {
 
 export function defaultLogPath(env: Record<string, string | undefined>): string {
   const base = env.CLAUDE_PLUGIN_DATA ?? `${env.HOME ?? '.'}/.claude/jevgate`;
-  return `${base}/decisions.jsonl`;
+  return `${base}/decisions-v2.jsonl`;
 }

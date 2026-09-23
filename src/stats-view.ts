@@ -24,13 +24,13 @@ export function spark(values: readonly number[]): string {
 
 const pct = (n: number, total: number) => (total ? `${Math.round((100 * n) / total)}%` : '');
 
-export const COLORS = { free: undefined, allow: 'green', ok: 'cyan', asked: 'yellow', denied: 'red', unreachable: 'yellow' } as const;
+export const COLORS = { free: undefined, allow: 'green', latency: 'cyan', asked: 'yellow', denied: 'red', unreachable: 'yellow' } as const;
 
 export type StatsView = { session: BashStats; all: BashStats; width: number; entries: number };
 
 export function statsLines(v: StatsView): Line[] {
   const { session: s, all: a } = v;
-  const total = (x: BashStats) => x.free + x.ok + x.asked + x.denied + x.unreachable;
+  const total = (x: BashStats) => x.free + x.allowed + x.asked + x.denied + x.unreachable;
   const width = Math.max(30, v.width - 2);
   const barW = Math.max(6, width - 24);
   const out: Line[] = [];
@@ -47,7 +47,6 @@ export function statsLines(v: StatsView): Line[] {
   row('asked', s.asked, st, COLORS.asked);
   row('denied', s.denied, st, COLORS.denied);
   if (s.unreachable) row('unreachable', s.unreachable, st, COLORS.unreachable);
-  if (s.ok - s.allowed) row('unsure', s.ok - s.allowed, st, COLORS.ok);
   out.push({ text: ' free    read-only, never judged', dim: true });
   out.push({ text: ' allow   nothing flagged', dim: true });
   out.push({ text: ' asked   flagged, you decided', dim: true });
@@ -69,7 +68,7 @@ export function statsLines(v: StatsView): Line[] {
 
   out.push({ text: 'Jev latency', bold: true });
   const sp = spark(s.msRecent.slice(-Math.max(8, barW)));
-  out.push({ text: ` ${sp}`, color: COLORS.ok });
+  out.push({ text: ` ${sp}`, color: COLORS.latency });
   out.push({ text: ` avg ${s.avgMs}ms this session · ${a.avgMs}ms all-time`, dim: true });
   out.push({ text: '' });
 
@@ -77,7 +76,7 @@ export function statsLines(v: StatsView): Line[] {
   out.push({ text: `All-time · ${at} calls`, bold: true });
   out.push({ text: ` ${bar(a.free, at, barW + 12)} free ${pct(a.free, at)}`, dim: true });
   out.push({ text: ` allow ${a.allowed} · asked ${a.asked} · denied ${a.denied}`, dim: true });
-  out.push({ text: ` unsure ${a.ok - a.allowed} · unreachable ${a.unreachable}`, dim: true });
+  if (a.unreachable) out.push({ text: ` unreachable ${a.unreachable}`, dim: true });
   out.push({ text: '' });
 
   const flags = (title: string, rows: [string, number][], color: string) => {

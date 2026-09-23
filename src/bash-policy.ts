@@ -41,15 +41,6 @@ export function needsGitStatus(parsed: Parsed): boolean {
   );
 }
 
-/** The two highest scores, for the row line and logs: `exfiltrates 0.12, reads_secrets 0.08`. */
-export function topScores(scores: Record<string, number>, n = 2): string {
-  return Object.entries(scores)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, n)
-    .map(([k, v]) => `${k} ${v.toFixed(2)}`)
-    .join(', ');
-}
-
 export function allowOutput(reason: string) {
   return {
     hookSpecificOutput: {

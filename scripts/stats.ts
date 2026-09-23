@@ -5,9 +5,10 @@ import { parseLog, bashStats, latestSession, formatStats } from '../src/ui-model
 
 const home = process.env.HOME ?? '.';
 const candidates = [
-  process.env.CLAUDE_PLUGIN_DATA ? `${process.env.CLAUDE_PLUGIN_DATA}/decisions.jsonl` : undefined,
-  `${home}/.claude/plugins/data/jevgate-jevgate/decisions.jsonl`,
-  `${home}/.claude/jevgate/decisions.jsonl`,
+  process.env.CLAUDE_PLUGIN_DATA ? `${process.env.CLAUDE_PLUGIN_DATA}/decisions-v2.jsonl` : undefined,
+  `${home}/.claude/plugins/data/jevgate-jevgate/decisions-v2.jsonl`,
+  `${home}/.claude/plugins/data/jevgate-inline/decisions-v2.jsonl`,
+  `${home}/.claude/jevgate/decisions-v2.jsonl`,
 ].filter((p): p is string => !!p);
 const path = candidates.find((p) => existsSync(p));
 if (!path) {

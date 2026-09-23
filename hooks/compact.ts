@@ -83,7 +83,7 @@ async function logCandidates($: Host): Promise<string[]> {
   const data = await $.env.get('CLAUDE_PLUGIN_DATA');
   // the command hooks write to their plugin data dir: `jevgate-jevgate` when installed, `jevgate-inline` under --plugin-dir
   const dirs = [data, `${home}/.claude/plugins/data/jevgate-jevgate`, `${home}/.claude/plugins/data/jevgate-inline`, `${home}/.claude/jevgate`];
-  return [...new Set(dirs.filter((d): d is string => !!d).map((d) => `${d}/decisions.jsonl`))];
+  return [...new Set(dirs.filter((d): d is string => !!d).map((d) => `${d}/decisions-v2.jsonl`))];
 }
 
 /** The newest entries of every decisions log, merged oldest first. Missing logs = empty. */
@@ -310,7 +310,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
       // no panel surface: fall back to a text row
       const s = ui.stats;
       const line = (label: string, x: BashStats) =>
-        `${label}: free ${x.free} · ok ${x.ok} (allow ${x.allowed}) · asked ${x.asked} (✓${x.approved} ✗${x.rejected}) · denied ${x.denied} · unreachable ${x.unreachable} · avg ${x.avgMs}ms`;
+        `${label}: free ${x.free} · allow ${x.allowed} · asked ${x.asked} (✓${x.approved} ✗${x.rejected}) · denied ${x.denied} · unreachable ${x.unreachable} · avg ${x.avgMs}ms`;
       return { text: `${line('session', s.session)}\n${line('all-time', s.all)}` };
     }
   });

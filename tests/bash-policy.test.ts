@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { denyOutput, allowOutput, askOutput, failsClosed, needsGitStatus, topScores } from '../src/bash-policy.ts';
+import { denyOutput, allowOutput, askOutput, failsClosed, needsGitStatus } from '../src/bash-policy.ts';
 import { parseShell } from '../src/shell.ts';
 
 test('failsClosed only in modes with no review behind the hook', () => {
@@ -18,10 +18,6 @@ test('needsGitStatus for git, file writers, redirects and inline scripts only', 
   for (const c of ['npm test', 'curl https://x', 'ls -la', 'node x.js', 'cat f | grep x']) {
     assert.equal(needsGitStatus(parseShell(c)), false, c);
   }
-});
-
-test('topScores lists the highest two', () => {
-  assert.equal(topScores({ a: 0.1, b: 0.9, c: 0.5 }), 'b 0.90, c 0.50');
 });
 
 test('allowOutput matches the PreToolUse contract', () => {

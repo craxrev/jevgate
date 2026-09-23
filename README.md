@@ -139,7 +139,7 @@ none / live_reversible / public_permanent, and yes/no for `changes_system`,
 `rewrites_history`, `uploads_data`, `exposes_secret`, and `requested` (its
 `false` asks by default; not asked for also turns an ask into a deny).
 
-Every decision is logged as JSON lines in `~/.claude/plugins/data/jevgate*/decisions.jsonl`.
+Every decision is logged as JSON lines in `~/.claude/plugins/data/jevgate*/decisions-v2.jsonl` (0.4 started a new file; the old `decisions.jsonl` is no longer read).
 
 <details>
 <summary><b>How it decides</b></summary>

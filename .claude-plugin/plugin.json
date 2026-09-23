@@ -1,6 +1,6 @@
 {
   "name": "jevgate",
-  "version": "0.3.14",
+  "version": "0.4.0",
   "description": "Jev-backed gates for Claude Code: bash guard for bypass mode, file guard, done-check, subagent gate, verbatim compaction. Each feature toggles independently.",
   "license": "MIT",
   "author": {
@@ -22,7 +22,7 @@
     "bashEnabled": {
       "type": "boolean",
       "title": "Bash guard",
-      "description": "Deny harmful shell commands in bypassPermissions mode. Read-only commands from Claude Code's own free set run without asking Jev; everything else is judged once.",
+      "description": "Judge shell commands: read-only commands from Claude Code's own free set run without asking Jev; everything else gets one Jev call that reports facts, and the rules decide allow, ask or deny.",
       "default": true
     },
     "bashRecentTurns": {
@@ -31,77 +31,52 @@
       "description": "How many of the latest conversation turns (user and assistant) Jev sees when judging whether a command or write exceeds the request.",
       "default": 8
     },
-    "bashAllowMax": {
-      "type": "number",
-      "title": "Bash guard: allow ceiling",
-      "description": "When every deny category scores under this, the hook answers allow and auto mode skips its classifier. 0 disables the allow path (deny only).",
-      "default": 0.3
-    },
-    "bashDenyDestroy": {
-      "type": "number",
-      "title": "Deny: destroys uncommitted work",
-      "description": "Minimum Jev probability to deny: reset --hard, checkout --, clean, or rm on paths with uncommitted changes. 0 means log only.",
-      "default": 0.5
-    },
-    "bashDenyDeleteOutside": {
-      "type": "number",
-      "title": "Deny: deletes outside repo",
-      "description": "Minimum Jev probability to deny: rm/mv targets outside the repository and scratchpad, or critical paths. 0 means log only.",
-      "default": 0.5
-    },
-    "bashDenyHistory": {
-      "type": "number",
-      "title": "Deny: rewrites shared history",
-      "description": "Minimum Jev probability to deny: force push, push to protected branches, remote changes, filter-branch. 0 means log only.",
-      "default": 0.5
-    },
-    "bashDenyDeploy": {
-      "type": "number",
-      "title": "Deny: deploys or publishes",
-      "description": "Minimum Jev probability to deny: deploy, publish, release, merge, production targets. 0 means log only.",
-      "default": 0.6
-    },
-    "bashDenyExfil": {
-      "type": "number",
-      "title": "Deny: exfiltrates",
-      "description": "Minimum Jev probability to deny: sends local data to a host that is not localhost or a known remote. 0 means log only.",
-      "default": 0.6
-    },
-    "bashDenySecrets": {
-      "type": "number",
-      "title": "Deny: reads secrets",
-      "description": "Minimum Jev probability to deny: .env, ~/.ssh, ~/.aws, keychain, tokens. 0 means log only.",
-      "default": 0.6
-    },
-    "bashDenySystem": {
-      "type": "number",
-      "title": "Deny: escalates or changes system",
-      "description": "Minimum Jev probability to deny: sudo, launchctl, crontab, system config, unrelated processes, global installs. 0 means log only.",
-      "default": 0.7
-    },
-    "bashDenyExceeds": {
-      "type": "number",
-      "title": "Deny: exceeds request",
-      "description": "Minimum Jev probability to deny: does something the recent user messages did not ask for. 0 logs the score without denying.. 0 means log only.",
-      "default": 0
-    },
     "fileEnabled": {
       "type": "boolean",
       "title": "File guard",
       "description": "Edit/Write/Read guard. Writes inside the project are free; a write outside it is judged by Jev; a read of a credential path is refused.",
       "default": true
     },
-    "fileDenySystem": {
+    "hitMin": {
       "type": "number",
-      "title": "File guard: deny system or user config",
-      "description": "Minimum Jev probability to deny a write outside the project that changes shell, git, ssh, Claude settings or system configuration. 0 means log only.",
+      "title": "Guards: flag at",
+      "description": "Probability at which a fact counts: for a choice, an option plus the stricter ones summed; for yes/no facts, yes at or above. Re-measure with scripts/probe-facts.ts before changing.",
+      "default": 0.5
+    },
+    "noneMin": {
+      "type": "number",
+      "title": "Guards: nothing-happened at",
+      "description": "Probability of 'none' Jev must give before a fact counts as not happening; between the two thresholds the fact is unsure.",
       "default": 0.6
     },
-    "fileDenyExceeds": {
+    "requestedMin": {
       "type": "number",
-      "title": "File guard: deny exceeds request",
-      "description": "Minimum Jev probability to deny an outside write the recent user messages did not ask for. 0 logs the score without denying.",
-      "default": 0
+      "title": "Guards: asked-for at",
+      "description": "Probability at which a command counts as asked for.",
+      "default": 0.6
+    },
+    "unrequestedMax": {
+      "type": "number",
+      "title": "Guards: not-asked-for at",
+      "description": "Probability at or below which a command counts as not asked for: then it is asked, and a flagged one is refused. Between this and requestedMin nothing changes.",
+      "default": 0.25
+    },
+    "unsureOutcome": {
+      "type": "string",
+      "title": "Guards: when Jev is unsure",
+      "description": "allow, ask or deny when a fact is unsure.",
+      "default": "ask"
+    },
+    "knownHosts": {
+      "type": "string",
+      "title": "Guards: your hosts",
+      "description": "Comma-separated hosts you own (ssh aliases or domains). Uploads to them are not flagged.",
+      "default": ""
+    },
+    "rulesFile": {
+      "type": "string",
+      "title": "Guards: rules file",
+      "description": "Optional JSON file overriding the outcome per fact value, e.g. {\"deletes\": {\"local_no_copy\": \"deny\"}, \"modes\": {\"auto\": {...}}}."
     },
     "doneEnabled": {
       "type": "boolean",

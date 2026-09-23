@@ -1,46 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CATEGORIES, DEFAULT_THRESHOLDS, DEFAULT_ALLOW_MAX, QUESTIONS, decide, denyOutput, allowOutput, failsClosed, needsGitStatus, topScores, type Category } from '../src/bash-policy.ts';
+import { denyOutput, allowOutput, askOutput, failsClosed, needsGitStatus, topScores } from '../src/bash-policy.ts';
 import { parseShell } from '../src/shell.ts';
-import { fromRaw, bashThresholds, DEFAULTS } from '../src/config.ts';
-import type { JevResponse } from '../src/jev.ts';
-
-const res = (over: Partial<Record<Category, number>>): JevResponse => {
-  const answers: JevResponse['answers'] = {};
-  for (const c of CATEGORIES) answers[c] = { type: 'noul', noul: over[c] ?? 0.05 };
-  return { model: 'j', answers };
-};
-
-test('one noul question per category, all naming the state fields', () => {
-  assert.deepEqual(Object.keys(QUESTIONS), [...CATEGORIES]);
-  for (const c of CATEGORIES) {
-    const q = QUESTIONS[c]!;
-    assert.equal(q.type, 'noul');
-    assert.match(q.instructions, /`command`/);
-    assert.match(q.instructions, /`repo_root`/);
-    assert.ok(q.criteria?.true && q.criteria.false, c);
-  }
-  assert.match(QUESTIONS.exceeds_request!.instructions, /`recent`/);
-  assert.match(QUESTIONS.destroys_uncommitted_work!.instructions, /`git_status`/);
-  assert.match(QUESTIONS.exfiltrates!.instructions, /`remotes`/);
-});
-
-test('decide is silent (ok) between the allow ceiling and the deny thresholds', () => {
-  const d = decide(res({ exfiltrates: 0.59, reads_secrets: 0.3, destroys_uncommitted_work: 0.49 }), DEFAULT_THRESHOLDS);
-  assert.equal(d.action, 'ok');
-  assert.equal(d.scores.exfiltrates, 0.59);
-  assert.equal(decide(res({ reads_secrets: 0.3 }), DEFAULT_THRESHOLDS).action, 'ok'); // exactly at the ceiling is not under it
-});
-
-test('decide allows when every deny category is under the ceiling; exceeds_request is ignored while log-only', () => {
-  const d = decide(res({ reads_secrets: 0.29, exceeds_request: 0.95 }), DEFAULT_THRESHOLDS);
-  assert.equal(d.action, 'allow');
-  if (d.action === 'allow') assert.equal(d.reason, 'jevgate: harmless, exceeds_request 0.95, reads_secrets 0.29 (ceiling 0.30)');
-  assert.equal(DEFAULT_ALLOW_MAX, 0.3);
-  assert.equal(decide(res({}), DEFAULT_THRESHOLDS, 0).action, 'ok'); // 0 disables the allow path
-  assert.equal(decide(res({ reads_secrets: 0.29 }), DEFAULT_THRESHOLDS, 0.2).action, 'ok');
-  assert.equal(decide(res({ exceeds_request: 0.95 }), { ...DEFAULT_THRESHOLDS, exceeds_request: 0.9 }).action, 'deny');
-});
 
 test('failsClosed only in modes with no review behind the hook', () => {
   assert.equal(failsClosed('bypassPermissions'), true);
@@ -48,49 +9,6 @@ test('failsClosed only in modes with no review behind the hook', () => {
   assert.equal(failsClosed('auto'), false);
   assert.equal(failsClosed('default'), false);
   assert.equal(failsClosed('acceptEdits'), false);
-});
-
-test('decide denies at the threshold and names the category and score', () => {
-  const d = decide(res({ rewrites_shared_history: 0.5 }), DEFAULT_THRESHOLDS);
-  assert.equal(d.action, 'deny');
-  if (d.action === 'deny') {
-    assert.equal(d.category, 'rewrites_shared_history');
-    assert.equal(d.reason, 'jevgate: denied, rewrites_shared_history 0.50 (threshold 0.50)');
-  }
-});
-
-test('decide picks the category furthest over its threshold', () => {
-  const d = decide(res({ exfiltrates: 0.97, reads_secrets: 0.98, destroys_uncommitted_work: 0.55 }), DEFAULT_THRESHOLDS);
-  assert.equal(d.action, 'deny');
-  if (d.action === 'deny') assert.equal(d.category, 'reads_secrets');
-  const e = decide(res({ exfiltrates: 0.7, destroys_uncommitted_work: 0.65 }), DEFAULT_THRESHOLDS);
-  if (e.action === 'deny') assert.equal(e.category, 'destroys_uncommitted_work'); // 0.15 over vs 0.10 over
-});
-
-test('a threshold of 0 is log-only: exceeds_request never denies by default', () => {
-  const d = decide(res({ exceeds_request: 0.99 }), DEFAULT_THRESHOLDS);
-  assert.notEqual(d.action, 'deny');
-  assert.equal(d.scores.exceeds_request, 0.99);
-  const strict = decide(res({ exceeds_request: 0.99 }), { ...DEFAULT_THRESHOLDS, exceeds_request: 0.9 });
-  assert.equal(strict.action, 'deny');
-});
-
-test('decide throws when Jev omits a category', () => {
-  const r = res({});
-  delete r.answers.exfiltrates;
-  assert.throws(() => decide(r, DEFAULT_THRESHOLDS), /exfiltrates/);
-});
-
-test('config maps per-category options onto thresholds, defaults match the policy', () => {
-  assert.deepEqual(bashThresholds(DEFAULTS), DEFAULT_THRESHOLDS);
-  const cfg = fromRaw({ bashDenyExfil: '0.8', bashDenyExceeds: 0.7 });
-  const t = bashThresholds(cfg);
-  assert.equal(t.exfiltrates, 0.8);
-  assert.equal(t.exceeds_request, 0.7);
-  assert.equal(t.reads_secrets, 0.6);
-  assert.equal(cfg.bashRecentTurns, 8);
-  assert.equal(cfg.bashAllowMax, 0.3);
-  assert.equal(fromRaw({ bashAllowMax: '0' }).bashAllowMax, 0);
 });
 
 test('needsGitStatus for git, file writers, redirects and inline scripts only', () => {
@@ -109,6 +27,12 @@ test('topScores lists the highest two', () => {
 test('allowOutput matches the PreToolUse contract', () => {
   const o = allowOutput('r');
   assert.equal(o.hookSpecificOutput.permissionDecision, 'allow');
+  assert.equal(o.hookSpecificOutput.permissionDecisionReason, 'r');
+});
+
+test('askOutput matches the PreToolUse contract', () => {
+  const o = askOutput('r');
+  assert.equal(o.hookSpecificOutput.permissionDecision, 'ask');
   assert.equal(o.hookSpecificOutput.permissionDecisionReason, 'r');
 });
 

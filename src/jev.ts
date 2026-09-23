@@ -47,7 +47,7 @@ export type FetchInit = { method: string; headers: Record<string, string>; body:
 export type FetchResult = { status: number; ok: boolean; text: string };
 export type FetchLike = (url: string, init: FetchInit) => Promise<FetchResult>;
 
-export type ClientOptions = { apiKey: string; model?: string; url?: string };
+export type ClientOptions = { apiKey: string; model?: string; url?: string; /** Extra tries after a transient failure; default 1. */ retries?: number };
 
 export function buildRequest(
   opts: ClientOptions,
@@ -67,7 +67,25 @@ export function buildRequest(
   };
 }
 
+/** The gateway in front of Jev refused the request by its content (an HTML 403): the same request always fails. */
+export class JevBlockedError extends Error {
+  constructor(status: number) {
+    super(`Jev HTTP ${status}: request blocked by the gateway (WAF)`);
+    this.name = 'JevBlockedError';
+  }
+}
+
+/** A failure that may pass on a second try: rate limit, server error, timeout, network. */
+export class JevTransientError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'JevTransientError';
+  }
+}
+
 export function parseResponse(res: FetchResult): JevResponse {
+  if (res.status === 403 && /^\s*</.test(res.text)) throw new JevBlockedError(res.status);
+  if (res.status === 429 || res.status >= 500) throw new JevTransientError(`Jev HTTP ${res.status}: ${res.text.slice(0, 200)}`);
   if (!res.ok) throw new Error(`Jev HTTP ${res.status}: ${res.text.slice(0, 200)}`);
   let parsed: unknown;
   try {
@@ -92,7 +110,21 @@ export async function ask(
   questions: Questions,
 ): Promise<JevResponse> {
   const { url, init } = buildRequest(opts, state, questions);
-  return parseResponse(await fetchLike(url, init));
+  const once = async () => {
+    let r: FetchResult;
+    try {
+      r = await fetchLike(url, init);
+    } catch (err) {
+      throw new JevTransientError(`Jev unreachable: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return parseResponse(r);
+  };
+  try {
+    return await once();
+  } catch (err) {
+    if (!(err instanceof JevTransientError) || (opts.retries ?? 1) < 1) throw err;
+    return once();
+  }
 }
 
 export function noul(res: JevResponse, name: string): number {

@@ -1,14 +1,18 @@
 // PreToolUse(Edit|Write|MultiEdit|NotebookEdit|Read): the file guard. Inside
 // the project (or the scratchpad) nothing is asked. A read of a path that
 // holds credentials is refused locally. A write outside the project gets one
-// Jev call: does it change the system or the user's environment, and did the
-// user ask for it. Jev unreachable: deny in bypass mode, silent elsewhere.
+// Jev call with the file facts (does it replace data, change the system, was
+// it asked for) and the same rules as the Bash guard, so a change cannot
+// route around the stricter tool. Jev unreachable: deny in bypass mode,
+// silent elsewhere; a request its gateway blocks is an ask.
 import { readStdinJson, emit } from '../src/stdin.ts';
-import { fromEnv, defaultLogPath } from '../src/config.ts';
-import { ask, nodeFetch } from '../src/jev.ts';
+import { existsSync } from 'node:fs';
+import { fromEnv, defaultLogPath, thresholds, rules } from '../src/config.ts';
+import { ask, nodeFetch, JevBlockedError } from '../src/jev.ts';
 import { appendLog } from '../src/log.ts';
 import { execRunner, recentTurns } from '../src/bash-context.ts';
-import { denyOutput, failsClosed, UNREACHABLE_REASON } from '../src/bash-policy.ts';
+import { denyOutput, askOutput, allowOutput, failsClosed, UNREACHABLE_REASON, BLOCKED_REASON } from '../src/bash-policy.ts';
+import { FILE_FACTS, FILE_QUESTIONS, resolveFacts, decideFacts, rawScores } from '../src/facts.ts';
 import {
   WRITE_TOOLS,
   toolPath,
@@ -16,8 +20,6 @@ import {
   resolvePath,
   insideProject,
   isSensitivePath,
-  FILE_QUESTIONS,
-  decideFile,
   SECRET_READ_REASON,
   type FileInput,
   type FileState,
@@ -49,7 +51,7 @@ async function main(): Promise<void> {
   if (!WRITE_TOOLS.has(tool)) {
     // Read and anything else: only secret paths matter, and they need no model.
     if (isSensitivePath(path)) {
-      appendLog(logPath, { ...base, action: 'denied', category: 'reads_secrets', reason: SECRET_READ_REASON });
+      appendLog(logPath, { ...base, action: 'denied', category: 'exposes_secret', reason: SECRET_READ_REASON });
       emit(denyOutput(SECRET_READ_REASON));
     }
     return;
@@ -68,22 +70,31 @@ async function main(): Promise<void> {
   }
 
   const t0 = Date.now();
-  const state: FileState = { tool, path, cwd: input.cwd, repo_root: repoRoot };
+  const state: FileState = { command: `${tool} ${path}`, tool, path, cwd: input.cwd, repo_root: repoRoot, exists: existsSync(path), home: process.env.HOME };
   const head = contentHead(input.tool_input);
   if (head) state.content_head = head;
   const recent = recentTurns(input.transcript_path, cfg.bashRecentTurns);
   if (recent) state.recent = recent;
   try {
     const res = await ask(nodeFetch(cfg.timeoutMs), { apiKey: cfg.apiKey, model: cfg.model }, state, FILE_QUESTIONS);
-    const d = decideFile(res, { changes_system_or_user_config: cfg.fileDenySystem, exceeds_request: cfg.fileDenyExceeds });
-    const ms = Date.now() - t0;
+    const d = decideFacts(resolveFacts(res, FILE_FACTS, thresholds(cfg)), rules(cfg, mode), cfg.unsureOutcome);
+    const entry = { ...base, facts: d.facts, scores: rawScores(res, FILE_FACTS), ms: Date.now() - t0 };
     if (d.action === 'deny') {
-      appendLog(logPath, { ...base, action: 'denied', category: d.category, reason: d.reason, scores: d.scores, ms });
+      appendLog(logPath, { ...entry, action: 'denied', category: d.hits.join(', '), reason: d.reason });
       emit(denyOutput(d.reason));
+    } else if (d.action === 'ask') {
+      appendLog(logPath, { ...entry, action: 'asked', category: d.hits.join(', '), reason: d.reason });
+      emit(askOutput(d.reason));
+    } else {
+      appendLog(logPath, { ...entry, action: 'allow' });
+      emit(allowOutput(d.reason));
+    }
+  } catch (err) {
+    if (err instanceof JevBlockedError) {
+      appendLog(logPath, { ...base, action: 'asked', category: 'blocked', reason: BLOCKED_REASON, error: String(err), ms: Date.now() - t0 });
+      emit(askOutput(BLOCKED_REASON));
       return;
     }
-    appendLog(logPath, { ...base, action: 'ok', scores: d.scores, ms });
-  } catch (err) {
     const closed = failsClosed(mode);
     appendLog(logPath, { ...base, action: 'unreachable', closed, error: String(err), ms: Date.now() - t0 });
     if (closed) emit(denyOutput(UNREACHABLE_REASON));

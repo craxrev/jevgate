@@ -6,13 +6,8 @@ import {
   resolvePath,
   insideProject,
   isSensitivePath,
-  decideFile,
-  DEFAULT_FILE_THRESHOLDS,
-  FILE_QUESTIONS,
-  FILE_CATEGORIES,
   WRITE_TOOLS,
 } from '../src/file-policy.ts';
-import type { JevResponse } from '../src/jev.ts';
 
 const HOME = '/Users/me';
 const REPO = '/Users/me/dev/repo';
@@ -61,24 +56,6 @@ test('isSensitivePath matches credential files, not ordinary ones', () => {
   }
 });
 
-const res = (over: Partial<Record<(typeof FILE_CATEGORIES)[number], number>>): JevResponse => {
-  const answers: JevResponse['answers'] = {};
-  for (const c of FILE_CATEGORIES) answers[c] = { type: 'noul', noul: over[c] ?? 0.05 };
-  return { model: 'j', answers };
-};
-
-test('decideFile denies system changes at the threshold, exceeds_request is log-only by default', () => {
-  assert.equal(decideFile(res({}), DEFAULT_FILE_THRESHOLDS).action, 'ok');
-  const d = decideFile(res({ changes_system_or_user_config: 0.6 }), DEFAULT_FILE_THRESHOLDS);
-  assert.equal(d.action, 'deny');
-  if (d.action === 'deny') assert.equal(d.reason, 'jevgate: denied, changes_system_or_user_config 0.60 (threshold 0.60)');
-  assert.equal(decideFile(res({ exceeds_request: 0.99 }), DEFAULT_FILE_THRESHOLDS).action, 'ok');
-  assert.equal(decideFile(res({ exceeds_request: 0.99 }), { ...DEFAULT_FILE_THRESHOLDS, exceeds_request: 0.8 }).action, 'deny');
-});
-
-test('questions cover both categories and name the state fields', () => {
-  assert.deepEqual(Object.keys(FILE_QUESTIONS), [...FILE_CATEGORIES]);
-  for (const c of FILE_CATEGORIES) assert.match(FILE_QUESTIONS[c]!.instructions, /`path`/);
-  assert.match(FILE_QUESTIONS.exceeds_request!.instructions, /`recent`/);
+test('write tools are the ones the guard judges', () => {
   assert.deepEqual([...WRITE_TOOLS].sort(), ['Edit', 'MultiEdit', 'NotebookEdit', 'Write']);
 });

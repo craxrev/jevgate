@@ -26,6 +26,8 @@ export type ContextInput = {
   cwd?: string;
   transcriptPath?: string;
   recentTurns: number;
+  home?: string;
+  knownHosts?: string[];
 };
 
 export type RecentTurn = { role: 'user' | 'assistant'; text: string };
@@ -62,7 +64,14 @@ export function gatherState(input: ContextInput, run: Runner = execRunner): Bash
       const status = run('git', ['status', '--porcelain'], input.cwd);
       if (status !== undefined) state.git_status = trimStatus(status);
     }
+    const branch = run('git', ['branch', '--show-current'], input.cwd)?.trim();
+    if (branch) {
+      state.current_branch = branch;
+      state.branch_pushed = run('git', ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], input.cwd) !== undefined;
+    }
   }
+  if (input.home) state.home = input.home;
+  if (input.knownHosts?.length) state.known_hosts = input.knownHosts;
   const recent = recentTurns(input.transcriptPath, input.recentTurns);
   if (recent) state.recent = recent;
   return state;

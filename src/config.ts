@@ -1,4 +1,5 @@
-import type { BashThresholds } from './bash-policy.ts';
+import { readFileSync } from 'node:fs';
+import { DEFAULT_RULES, DEFAULT_THRESHOLDS, mergeRules, type Outcome, type Rules, type Thresholds } from './facts.ts';
 
 export type Config = {
   apiKey?: string;
@@ -8,21 +9,20 @@ export type Config = {
 
   bashEnabled: boolean;
   bashRecentTurns: number;
-  /** Allow (skip the classifier) when every deny category scores under this; 0 disables. */
-  bashAllowMax: number;
-  /** Deny thresholds per harm category; 0 means log only. */
-  bashDenyDestroy: number;
-  bashDenyDeleteOutside: number;
-  bashDenyHistory: number;
-  bashDenyDeploy: number;
-  bashDenyExfil: number;
-  bashDenySecrets: number;
-  bashDenySystem: number;
-  bashDenyExceeds: number;
 
   fileEnabled: boolean;
-  fileDenySystem: number;
-  fileDenyExceeds: number;
+
+  /** Shared by both guards: see Thresholds in facts.ts. */
+  hitMin: number;
+  noneMin: number;
+  requestedMin: number;
+  unrequestedMax: number;
+  /** Outcome when Jev is unsure about a fact. */
+  unsureOutcome: Outcome;
+  /** Comma-separated hosts the user owns; uploads to them are not flagged. */
+  knownHosts: string;
+  /** JSON file whose entries override the outcome per fact value, optionally per mode. */
+  rulesFile?: string;
 
   doneEnabled: boolean;
   doneMaxBlocks: number;
@@ -55,19 +55,15 @@ export const DEFAULTS: Config = {
 
   bashEnabled: true,
   bashRecentTurns: 8,
-  bashAllowMax: 0.3,
-  bashDenyDestroy: 0.5,
-  bashDenyDeleteOutside: 0.5,
-  bashDenyHistory: 0.5,
-  bashDenyDeploy: 0.6,
-  bashDenyExfil: 0.6,
-  bashDenySecrets: 0.6,
-  bashDenySystem: 0.7,
-  bashDenyExceeds: 0,
 
   fileEnabled: true,
-  fileDenySystem: 0.6,
-  fileDenyExceeds: 0,
+
+  hitMin: DEFAULT_THRESHOLDS.hitMin,
+  noneMin: DEFAULT_THRESHOLDS.noneMin,
+  requestedMin: DEFAULT_THRESHOLDS.requestedMin,
+  unrequestedMax: DEFAULT_THRESHOLDS.unrequestedMax,
+  unsureOutcome: 'ask',
+  knownHosts: '',
 
   doneEnabled: true,
   doneMaxBlocks: 2,
@@ -112,6 +108,10 @@ function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined;
 }
 
+function outcome(v: unknown, fallback: Outcome): Outcome {
+  return v === 'allow' || v === 'ask' || v === 'deny' ? v : fallback;
+}
+
 /** Builds a Config from raw option values keyed by camelCase option name. */
 export function fromRaw(raw: Raw): Config {
   const d = DEFAULTS;
@@ -123,19 +123,16 @@ export function fromRaw(raw: Raw): Config {
 
     bashEnabled: bool(raw.bashEnabled, d.bashEnabled),
     bashRecentTurns: num(raw.bashRecentTurns, d.bashRecentTurns),
-    bashAllowMax: num(raw.bashAllowMax, d.bashAllowMax),
-    bashDenyDestroy: num(raw.bashDenyDestroy, d.bashDenyDestroy),
-    bashDenyDeleteOutside: num(raw.bashDenyDeleteOutside, d.bashDenyDeleteOutside),
-    bashDenyHistory: num(raw.bashDenyHistory, d.bashDenyHistory),
-    bashDenyDeploy: num(raw.bashDenyDeploy, d.bashDenyDeploy),
-    bashDenyExfil: num(raw.bashDenyExfil, d.bashDenyExfil),
-    bashDenySecrets: num(raw.bashDenySecrets, d.bashDenySecrets),
-    bashDenySystem: num(raw.bashDenySystem, d.bashDenySystem),
-    bashDenyExceeds: num(raw.bashDenyExceeds, d.bashDenyExceeds),
 
     fileEnabled: bool(raw.fileEnabled, d.fileEnabled),
-    fileDenySystem: num(raw.fileDenySystem, d.fileDenySystem),
-    fileDenyExceeds: num(raw.fileDenyExceeds, d.fileDenyExceeds),
+
+    hitMin: num(raw.hitMin, d.hitMin),
+    noneMin: num(raw.noneMin, d.noneMin),
+    requestedMin: num(raw.requestedMin, d.requestedMin),
+    unrequestedMax: num(raw.unrequestedMax, d.unrequestedMax),
+    unsureOutcome: outcome(raw.unsureOutcome, d.unsureOutcome),
+    knownHosts: str(raw.knownHosts) ?? d.knownHosts,
+    rulesFile: str(raw.rulesFile),
 
     doneEnabled: bool(raw.doneEnabled, d.doneEnabled),
     doneMaxBlocks: num(raw.doneMaxBlocks, d.doneMaxBlocks),
@@ -171,23 +168,28 @@ export function fromEnv(env: Record<string, string | undefined>): Config {
   }
   if (env[OPTION_PREFIX + 'APIKEY']) raw.apiKey = env[OPTION_PREFIX + 'APIKEY'];
   if (env[OPTION_PREFIX + 'LOGPATH']) raw.logPath = env[OPTION_PREFIX + 'LOGPATH'];
+  if (env[OPTION_PREFIX + 'RULESFILE']) raw.rulesFile = env[OPTION_PREFIX + 'RULESFILE'];
   const cfg = fromRaw(raw);
   cfg.apiKey = cfg.apiKey ?? env.TYPESAFE_API_KEY;
   return cfg;
 }
 
-/** The per-category deny thresholds as the bash policy wants them. */
-export function bashThresholds(cfg: Config): BashThresholds {
-  return {
-    destroys_uncommitted_work: cfg.bashDenyDestroy,
-    deletes_outside_repo: cfg.bashDenyDeleteOutside,
-    rewrites_shared_history: cfg.bashDenyHistory,
-    deploys_or_publishes: cfg.bashDenyDeploy,
-    exfiltrates: cfg.bashDenyExfil,
-    reads_secrets: cfg.bashDenySecrets,
-    escalates_or_system: cfg.bashDenySystem,
-    exceeds_request: cfg.bashDenyExceeds,
-  };
+export function thresholds(cfg: Config): Thresholds {
+  return { hitMin: cfg.hitMin, noneMin: cfg.noneMin, requestedMin: cfg.requestedMin, unrequestedMax: cfg.unrequestedMax };
+}
+
+export function knownHosts(cfg: Config): string[] {
+  return cfg.knownHosts.split(',').map((h) => h.trim()).filter(Boolean);
+}
+
+/** The default rules with the rules file on top; a missing or broken file keeps the defaults. */
+export function rules(cfg: Config, mode: string | undefined): Rules {
+  if (!cfg.rulesFile) return DEFAULT_RULES;
+  try {
+    return mergeRules(DEFAULT_RULES, JSON.parse(readFileSync(cfg.rulesFile, 'utf8')), mode);
+  } catch {
+    return DEFAULT_RULES;
+  }
 }
 
 export function defaultLogPath(env: Record<string, string | undefined>): string {

@@ -15,6 +15,7 @@ export type LogEntry = {
   category?: string;
   command?: string;
   scores?: Record<string, number>;
+  facts?: Record<string, string>;
   ms?: number;
   blocks?: number;
 };
@@ -50,20 +51,22 @@ export function parseLog(text: string): LogEntry[] {
   return out;
 }
 
-/** Bash outcomes. `free` is silent and not counted in the footer. `ok` covers allow and silent alike; pre-0.2 names fold in. */
+/** Bash outcomes. `free` is silent and not counted in the footer. `ok` covers allow and (before 0.4) silent; older names fold in. */
 export const BASH_FREE = new Set(['free', 'not-asked', 'passthrough']);
 export const BASH_OK = new Set(['ok', 'allow', 'fast-lane', 'unsure', 'pass']);
+export const BASH_ASKED = new Set(['asked']);
 export const BASH_DENIED = new Set(['denied', 'unreachable']);
 
-export type Tally = { free: number; ok: number; denied: number; blocks: number; agentDenies: number };
+export type Tally = { free: number; ok: number; asked: number; denied: number; blocks: number; agentDenies: number };
 
 export function tally(entries: readonly LogEntry[], session: string): Tally {
-  const t: Tally = { free: 0, ok: 0, denied: 0, blocks: 0, agentDenies: 0 };
+  const t: Tally = { free: 0, ok: 0, asked: 0, denied: 0, blocks: 0, agentDenies: 0 };
   for (const e of entries) {
     if (e.session !== session) continue;
     if (e.feature === 'bash' || e.feature === 'file') {
       if (BASH_FREE.has(e.action)) t.free++;
       else if (BASH_OK.has(e.action)) t.ok++;
+      else if (BASH_ASKED.has(e.action)) t.asked++;
       else if (BASH_DENIED.has(e.action)) t.denied++;
     } else if (e.feature === 'done' && e.action === 'block') t.blocks++;
     else if (e.feature === 'agent' && e.action === 'deny') t.agentDenies++;
@@ -71,10 +74,11 @@ export function tally(entries: readonly LogEntry[], session: string): Tally {
   return t;
 }
 
-/** Short form for the prompt footer's mode labels: `jev ✓5 ⊘1 ✗1 ⇢1 ⇊1`. */
+/** Short form for the prompt footer's mode labels: `jev ✓5 ?2 ⊘1 ✗1 ⇢1 ⇊1`. */
 export function footerLabel(t: Tally, compactions: number): string | undefined {
   const parts: string[] = [];
   if (t.ok) parts.push(`✓${t.ok}`);
+  if (t.asked) parts.push(`?${t.asked}`);
   if (t.denied) parts.push(`⊘${t.denied}`);
   if (t.blocks) parts.push(`✗${t.blocks}`);
   if (t.agentDenies) parts.push(`⇢${t.agentDenies}`);
@@ -85,6 +89,7 @@ export function footerLabel(t: Tally, compactions: number): string | undefined {
 export function statusText(t: Tally, compactions: number): string | undefined {
   const parts: string[] = [];
   if (t.ok) parts.push(`✓${t.ok} ok`);
+  if (t.asked) parts.push(`?${t.asked} asked`);
   if (t.denied) parts.push(`⊘${t.denied} denied`);
   if (t.blocks) parts.push(`✗${t.blocks} done-check`);
   if (t.agentDenies) parts.push(`⇢${t.agentDenies} subagent`);
@@ -92,21 +97,22 @@ export function statusText(t: Tally, compactions: number): string | undefined {
   return parts.length ? `jev ${parts.join(' · ')}` : undefined;
 }
 
+/** What a guard entry says about its flags: the new `category` list, or the old top scores. */
+function detail(e: LogEntry): string {
+  if (e.facts) return e.category || 'nothing flagged';
+  if (e.category && e.scores) return `${e.category} ${(e.scores[e.category] ?? 0).toFixed(2)}`;
+  return e.category ?? e.reason ?? '';
+}
+
 /** The dim line under a Bash or file-tool row; undefined keeps the row as the engine drew it (free calls stay silent). */
 export function bashRowText(e: LogEntry): string | undefined {
-  if (e.feature === 'file') {
-    if (e.action === 'denied') return `✗ jevgate denied · ${e.category ?? e.reason ?? ''}${e.category && e.scores ? ` ${(e.scores[e.category] ?? 0).toFixed(2)}` : ''}`;
-    if (e.action === 'ok') return `▸ jevgate unsure · outside project · ${e.scores ? topScores(e.scores) : ''} · ${e.ms ?? '?'}ms`;
-    if (e.action === 'unreachable') return `✗ jevgate unreachable · Jev did not answer · ${e.ms ?? '?'}ms`;
-    return undefined;
-  }
-  if (e.feature !== 'bash') return undefined;
-  if (e.action === 'ok' || e.action === 'allow') return `▸ jevgate ${e.action === 'ok' ? 'unsure' : 'allow'} · ${e.scores ? topScores(e.scores) : ''} · ${e.ms ?? '?'}ms`;
-  if (e.action === 'denied') {
-    const score = e.category && e.scores ? ` ${(e.scores[e.category] ?? 0).toFixed(2)}` : '';
-    return `✗ jevgate denied · ${e.category ?? e.reason ?? ''}${score}`;
-  }
-  if (e.action === 'unreachable') return `✗ jevgate unreachable · Jev did not answer · ${e.ms ?? '?'}ms`;
+  if (e.feature !== 'bash' && e.feature !== 'file') return undefined;
+  const ms = `${e.ms ?? '?'}ms`;
+  if (e.action === 'denied') return `✗ jevgate denied · ${detail(e)}`;
+  if (e.action === 'asked') return `? jevgate asked · ${e.category === 'blocked' ? 'Jev could not judge (gateway block)' : detail(e)} · ${ms}`;
+  if (e.action === 'unreachable') return `✗ jevgate unreachable · Jev did not answer · ${ms}`;
+  if (e.action === 'allow') return `▸ jevgate allow · ${e.facts ? 'nothing flagged' : e.scores ? topScores(e.scores) : ''} · ${ms}`;
+  if (e.action === 'ok') return `▸ jevgate unsure · ${e.feature === 'file' ? 'outside project · ' : ''}${e.scores ? topScores(e.scores) : ''} · ${ms}`;
   return undefined;
 }
 
@@ -120,6 +126,8 @@ export type BashStats = {
   ok: number;
   /** Of `ok`, those the hook answered allow (classifier skipped in auto mode). */
   allowed: number;
+  /** Asked the user (a real prompt, in bypass mode too). */
+  asked: number;
   denied: number;
   unreachable: number;
   /** Denied entries per category, most frequent first. */
@@ -133,7 +141,7 @@ export type BashStats = {
 };
 
 export function bashStats(entries: readonly LogEntry[], session?: string): BashStats {
-  const s: BashStats = { free: 0, ok: 0, allowed: 0, denied: 0, unreachable: 0, categories: [], avgMs: 0, msRecent: [], blocks: 0, agentDenies: 0 };
+  const s: BashStats = { free: 0, ok: 0, allowed: 0, asked: 0, denied: 0, unreachable: 0, categories: [], avgMs: 0, msRecent: [], blocks: 0, agentDenies: 0 };
   const cats = new Map<string, number>();
   let msSum = 0;
   let msN = 0;
@@ -147,12 +155,13 @@ export function bashStats(entries: readonly LogEntry[], session?: string): BashS
     else if (BASH_OK.has(e.action)) {
       s.ok++;
       if (e.action === 'allow') s.allowed++;
-    } else if (e.action === 'denied') {
+    } else if (BASH_ASKED.has(e.action)) s.asked++;
+    else if (e.action === 'denied') {
       s.denied++;
       const c = (e.feature === 'file' ? 'file:' : '') + (e.category ?? e.reason ?? '?');
       cats.set(c, (cats.get(c) ?? 0) + 1);
     } else if (e.action === 'unreachable') s.unreachable++;
-    if (typeof e.ms === 'number' && (BASH_OK.has(e.action) || e.action === 'denied')) {
+    if (typeof e.ms === 'number' && (BASH_OK.has(e.action) || BASH_ASKED.has(e.action) || e.action === 'denied')) {
       msSum += e.ms;
       msN++;
       s.msRecent.push(e.ms);
@@ -171,11 +180,11 @@ export function latestSession(entries: readonly LogEntry[]): string | undefined 
 }
 
 export function formatStats(session: BashStats, all: BashStats, sessionId?: string): string {
-  const judged = (s: BashStats) => s.ok + s.denied + s.unreachable;
+  const judged = (s: BashStats) => s.ok + s.asked + s.denied + s.unreachable;
   const row = (label: string, s: BashStats) => {
     const total = s.free + judged(s);
     const pct = (n: number) => (total ? `${Math.round((100 * n) / total)}%` : '-');
-    return `${label.padEnd(9)} free ${String(s.free).padStart(5)} (${pct(s.free).padStart(4)})  ok ${String(s.ok).padStart(5)} (allow ${s.allowed})  denied ${String(s.denied).padStart(4)}  unreachable ${String(s.unreachable).padStart(3)}  avg ${s.avgMs}ms  done-check ✗${s.blocks}  subagent ⇢${s.agentDenies}`;
+    return `${label.padEnd(9)} free ${String(s.free).padStart(5)} (${pct(s.free).padStart(4)})  ok ${String(s.ok).padStart(5)} (allow ${s.allowed})  asked ${String(s.asked).padStart(4)}  denied ${String(s.denied).padStart(4)}  unreachable ${String(s.unreachable).padStart(3)}  avg ${s.avgMs}ms  done-check ✗${s.blocks}  subagent ⇢${s.agentDenies}`;
   };
   const lines = ['jevgate guard (bash + file tools)', row(`session${sessionId ? '' : '*'}`, session), row('all-time', all)];
   if (all.categories.length) {

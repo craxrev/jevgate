@@ -25,6 +25,8 @@ const fakeGit =
     if (key === 'rev-parse --show-toplevel') return '/repo\n';
     if (key === 'remote -v') return 'origin\tgit@github.com:me/repo.git (fetch)\norigin\tgit@github.com:me/repo.git (push)\n';
     if (key === 'status --porcelain') return ' M src/a.ts\n?? new.txt\n';
+    if (key === 'branch --show-current') return 'feat/x\n';
+    if (key === 'rev-parse --abbrev-ref --symbolic-full-name @{u}') return 'origin/feat/x\n';
     return undefined;
   };
 
@@ -37,6 +39,12 @@ test('state carries the command as written, repo root and remotes', () => {
   assert.match(s.remotes ?? '', /github\.com:me\/repo/);
   assert.equal(s.git_status, undefined); // npm test touches no files
   assert.equal(s.recent, undefined);
+  assert.equal(s.current_branch, 'feat/x');
+  assert.equal(s.branch_pushed, true);
+  const unpushed = gatherState({ command, parsed: parseShell(command), cwd: '/repo', recentTurns: 0, home: '/Users/me', knownHosts: ['box'] }, fakeGit({ 'rev-parse --abbrev-ref --symbolic-full-name @{u}': undefined }));
+  assert.equal(unpushed.branch_pushed, false);
+  assert.equal(unpushed.home, '/Users/me');
+  assert.deepEqual(unpushed.known_hosts, ['box']);
 });
 
 test('git status is gathered only for git, file writes, redirects and scripts', () => {

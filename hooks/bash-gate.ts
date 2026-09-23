@@ -1,16 +1,18 @@
 // PreToolUse(Bash): the guard. Commands in Claude Code's own read-only free set
-// run without a word. Everything else is judged once by Jev against the harm
-// categories: a category over its threshold is a deny; every category under the
-// allow ceiling is an allow (in auto mode that skips the classifier); in between
-// the hook stays silent and Claude Code decides. Jev unreachable is a deny in
-// bypass mode, where nothing else would judge, and silent elsewhere.
+// run without a word. Everything else gets one Jev call that reports facts
+// (what the command deletes, ships, changes, uploads, prints); the outcome
+// comes from the rules in facts.ts: allow (in auto mode that skips the
+// classifier), ask (a real prompt, in bypass mode too) or deny. Jev unreachable
+// is a deny in bypass mode, where nothing else would judge, and silent
+// elsewhere; a request its gateway blocks is an ask.
 import { readStdinJson, emit } from '../src/stdin.ts';
-import { fromEnv, defaultLogPath, bashThresholds } from '../src/config.ts';
-import { ask, nodeFetch } from '../src/jev.ts';
+import { fromEnv, defaultLogPath, thresholds, rules, knownHosts } from '../src/config.ts';
+import { ask, nodeFetch, JevBlockedError } from '../src/jev.ts';
 import { appendLog } from '../src/log.ts';
 import { checkFree } from '../src/free.ts';
 import { gatherState } from '../src/bash-context.ts';
-import { QUESTIONS, decide, denyOutput, allowOutput, topScores, failsClosed, UNREACHABLE_REASON } from '../src/bash-policy.ts';
+import { denyOutput, allowOutput, askOutput, failsClosed, UNREACHABLE_REASON, BLOCKED_REASON } from '../src/bash-policy.ts';
+import { BASH_FACTS, BASH_QUESTIONS, resolveFacts, decideFacts, rawScores } from '../src/facts.ts';
 
 type Input = {
   session_id?: string;
@@ -55,19 +57,29 @@ async function main(): Promise<void> {
     cwd: input.cwd,
     transcriptPath: input.transcript_path,
     recentTurns: cfg.bashRecentTurns,
+    home: process.env.HOME,
+    knownHosts: knownHosts(cfg),
   });
   try {
-    const res = await ask(nodeFetch(cfg.timeoutMs), { apiKey: cfg.apiKey, model: cfg.model }, state, QUESTIONS);
-    const d = decide(res, bashThresholds(cfg), cfg.bashAllowMax);
-    const ms = Date.now() - t0;
+    const res = await ask(nodeFetch(cfg.timeoutMs), { apiKey: cfg.apiKey, model: cfg.model }, state, BASH_QUESTIONS);
+    const d = decideFacts(resolveFacts(res, BASH_FACTS, thresholds(cfg)), rules(cfg, mode), cfg.unsureOutcome);
+    const entry = { ...base, facts: d.facts, scores: rawScores(res, BASH_FACTS), ms: Date.now() - t0 };
     if (d.action === 'deny') {
-      appendLog(logPath, { ...base, action: 'denied', category: d.category, reason: d.reason, scores: d.scores, ms });
+      appendLog(logPath, { ...entry, action: 'denied', category: d.hits.join(', '), reason: d.reason });
       emit(denyOutput(d.reason));
+    } else if (d.action === 'ask') {
+      appendLog(logPath, { ...entry, action: 'asked', category: d.hits.join(', '), reason: d.reason });
+      emit(askOutput(d.reason));
+    } else {
+      appendLog(logPath, { ...entry, action: 'allow' });
+      emit(allowOutput(d.reason));
+    }
+  } catch (err) {
+    if (err instanceof JevBlockedError) {
+      appendLog(logPath, { ...base, action: 'asked', category: 'blocked', reason: BLOCKED_REASON, error: String(err), ms: Date.now() - t0 });
+      emit(askOutput(BLOCKED_REASON));
       return;
     }
-    appendLog(logPath, { ...base, action: d.action, scores: d.scores, top: topScores(d.scores), ms });
-    if (d.action === 'allow') emit(allowOutput(d.reason));
-  } catch (err) {
     // Bypass mode has no review behind this hook, so nothing unjudged runs there.
     // Elsewhere Claude Code's own flow (rules, classifier, prompts) takes over.
     const closed = failsClosed(mode);

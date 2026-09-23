@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildRequest, parseResponse, noul, ask, estimateTokens, type FetchLike } from '../src/jev.ts';
+import { buildRequest, parseResponse, noul, ask, estimateTokens, JevBlockedError, JevTransientError, type FetchLike } from '../src/jev.ts';
 
 test('buildRequest shapes the System One request', () => {
   const { url, init } = buildRequest({ apiKey: 'k' }, { a: 1 }, { q: { type: 'noul', instructions: 'x' } });
@@ -38,4 +38,40 @@ test('ask goes through the injected fetch', async () => {
 
 test('estimateTokens is pessimistic', () => {
   assert.ok(estimateTokens('a'.repeat(350)) >= 100);
+});
+
+test('a gateway HTML 403 is a block, 429 and 5xx are transient', () => {
+  assert.throws(() => parseResponse({ status: 403, ok: false, text: '<!DOCTYPE html><html>' }), JevBlockedError);
+  assert.throws(() => parseResponse({ status: 403, ok: false, text: '{"detail":"bad key"}' }), (e) => !(e instanceof JevBlockedError));
+  assert.throws(() => parseResponse({ status: 429, ok: false, text: '' }), JevTransientError);
+  assert.throws(() => parseResponse({ status: 502, ok: false, text: '' }), JevTransientError);
+});
+
+test('ask retries once after a transient failure, never after a block', async () => {
+  const ok = { status: 200, ok: true, text: '{"model":"j","answers":{}}' };
+  const seq = (...rs: (typeof ok | Error)[]): { f: FetchLike; calls: () => number } => {
+    let i = 0;
+    return {
+      f: async () => {
+        const r = rs[i++]!;
+        if (r instanceof Error) throw r;
+        return r;
+      },
+      calls: () => i,
+    };
+  };
+  const a = seq({ status: 503, ok: false, text: '' }, ok);
+  assert.equal((await ask(a.f, { apiKey: 'k' }, 's', {})).model, 'j');
+  assert.equal(a.calls(), 2);
+  const b = seq(new Error('aborted'), ok);
+  await ask(b.f, { apiKey: 'k' }, 's', {});
+  assert.equal(b.calls(), 2);
+  const c = seq({ status: 403, ok: false, text: '<html>' }, ok);
+  await assert.rejects(ask(c.f, { apiKey: 'k' }, 's', {}), JevBlockedError);
+  assert.equal(c.calls(), 1);
+  const d = seq({ status: 500, ok: false, text: '' }, { status: 500, ok: false, text: '' });
+  await assert.rejects(ask(d.f, { apiKey: 'k' }, 's', {}), JevTransientError);
+  const e = seq({ status: 500, ok: false, text: '' }, ok);
+  await assert.rejects(ask(e.f, { apiKey: 'k', retries: 0 }, 's', {}), JevTransientError);
+  assert.equal(e.calls(), 1);
 });

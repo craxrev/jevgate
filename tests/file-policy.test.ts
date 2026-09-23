@@ -45,6 +45,8 @@ test('insideProject: repo root, cwd fallback, scratchpad', () => {
   assert.equal(insideProject('/private/tmp/claude-501/-Users-me-dev-repo/abc/scratchpad/x.txt', REPO, REPO), true);
   assert.equal(insideProject('/tmp/claude/x.txt', REPO, REPO), true);
   assert.equal(insideProject('/tmp/x.txt', REPO, REPO), false);
+  assert.equal(insideProject('/Users/me/.claude/jobs/8cfd7ea1/tmp/t.sh', REPO, REPO), true);
+  assert.equal(insideProject('/Users/me/.claude/jobs/8cfd7ea1/state.json', REPO, REPO), false);
 });
 
 test('isSensitivePath matches credential files, not ordinary ones', () => {

@@ -182,7 +182,7 @@ judged call takes 0.3–1 s and about 3.3k input tokens.
 
 | Call | Decided by | Outcome |
 | --- | --- | --- |
-| write inside the repo (or `cwd` without one) or a scratchpad | local | free |
+| write inside the repo (or `cwd` without one), a scratchpad or `~/.claude/jobs/*/tmp` | local | free |
 | write outside | one Jev call | `deletes`, `changes_system`, `requested` with the Bash rules |
 | read of a credential path | local | denied |
 | any other read | local | silent |
@@ -210,7 +210,8 @@ under `compactMinReductionRatio`, the built-in summary runs instead.
 - Uploads to your own server are flagged unless it is in `knownHosts`.
 - An unrequested action Jev is unsure about runs: the unrequested local
   `git commit` in the hand cases scores 0.55, above the 0.25 cut-off.
-- The file guard shares the Bash texts but was not measured on its own yet.
+- The file guard asks on every whole-file Write over an existing file outside
+  the project. Working on another repo from a different folder means many asks.
 - The gateway in front of Jev blocks a few commands by content (`/etc/hosts`,
   some SQL); they are asked. To do: ask TypeSafe about it.
 - Whether an ask was approved or rejected is not logged yet.
@@ -234,6 +235,7 @@ npm run typecheck
 TYPESAFE_API_KEY=... npm run probe [done|agent]              # live Jev on hand-written cases
 TYPESAFE_API_KEY=... node scripts/probe-facts.ts --out r.jsonl # guard facts: labelled cases + corpus
 node scripts/probe-facts.ts --replay r.jsonl --none 0.5        # re-score saved answers, no calls
+TYPESAFE_API_KEY=... node scripts/probe-files.ts --real         # file guard: labelled writes + your outside writes
 claude --plugin-dir ~/jevgate --debug hooks # run from the checkout without installing
 ```
 

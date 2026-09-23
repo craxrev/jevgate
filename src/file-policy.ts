@@ -40,7 +40,8 @@ export function resolvePath(p: string, cwd: string | undefined, home: string | u
   return resolve(out);
 }
 
-const SCRATCHPAD = /^\/(private\/)?tmp\/claude(-\d+)?\//;
+// session scratchpads, and the per-job temp dirs Claude Code keeps under ~/.claude/jobs
+const SCRATCHPAD = /^\/(private\/)?tmp\/claude(-\d+)?\/|\/\.claude\/jobs\/[^/]+\/tmp\//;
 
 function under(path: string, root: string | undefined): boolean {
   if (!root) return false;

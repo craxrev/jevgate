@@ -38,7 +38,8 @@ test('statsLines fits the pane width and carries the styles', () => {
   assert.ok(!lines.some((l) => l.text.trimStart().startsWith('unreachable')), 'zero unreachable is hidden');
   const chart = lines[lines.findIndex((l) => l.text === 'Jev latency') + 1]!;
   assert.equal(chart.text.length, 1 + 30, 'the chart spans the pane even with 3 calls');
-  assert.match(chart.text, /^ ·+\S{3}$/);
+  assert.match(chart.text, /^ ▁+\S{3}$/);
+  assert.equal(chart.dimHead, 1 + 27, 'the empty stretch is drawn dim');
   assert.equal(lines[lines.findIndex((l) => l.text === 'Jev latency') + 2]!.text, ' last 3 calls · peak 1200ms');
   assert.equal(lines[lines.findIndex((l) => l.text === 'Your answers to asks') + 1]!.text, ' approved 2 · rejected 1');
   assert.ok(!lines.some((l) => l.text === 'Not judged by Jev'), 'hidden when Jev judged everything');

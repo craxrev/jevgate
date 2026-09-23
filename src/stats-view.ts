@@ -2,7 +2,8 @@
 // unit-testable and the function-hook module only maps lines to Text elements.
 import type { BashStats } from './ui-model.ts';
 
-export type Line = { text: string; color?: string; dim?: boolean; bold?: boolean };
+/** One pane line; `dimHead` characters at its start are drawn dim (the chart's empty baseline). */
+export type Line = { text: string; color?: string; dim?: boolean; bold?: boolean; dimHead?: number };
 
 const FULL = '█';
 const EMPTY = '░';
@@ -70,7 +71,7 @@ export function statsLines(v: StatsView): Line[] {
   // a fixed frame: empty slots on the left, newest call on the right, so a short session still reads as a chart
   const chartW = barW + 12;
   const recent = s.msRecent.slice(-chartW);
-  out.push({ text: ` ${'·'.repeat(chartW - recent.length)}${spark(recent)}`, color: COLORS.latency });
+  out.push({ text: ` ${'▁'.repeat(chartW - recent.length)}${spark(recent)}`, color: COLORS.latency, dimHead: 1 + chartW - recent.length });
   out.push({ text: recent.length ? ` last ${recent.length} calls · peak ${Math.max(...recent)}ms` : ' no judged calls yet', dim: true });
   out.push({ text: ` avg ${s.avgMs}ms this session · ${a.avgMs}ms all-time`, dim: true });
   out.push({ text: '' });

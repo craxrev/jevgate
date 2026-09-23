@@ -179,3 +179,8 @@ From a running session with the plugin loaded: `/plugin-types types`. Regenerate
 - The bash guard fails closed in bypass mode only, where a silent hook would mean
   an unjudged command. Everywhere else every hook fails silent: any error means
   the stock Claude Code behavior.
+- Every gate runs through `hooks/run.sh`, which keeps the script's stderr in
+  `~/.claude/jevgate/hook-errors.log` (or under the plugin data dir). A gate that
+  dies before answering, which Claude Code would otherwise treat as a warning
+  and run the command unguarded, becomes a block for the Bash and file guards
+  and a silent pass for the subagent gate and done-check.

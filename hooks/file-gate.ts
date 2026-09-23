@@ -7,7 +7,8 @@
 // silent elsewhere; a request its gateway blocks is an ask.
 import { readStdinJson, emit } from '../src/stdin.ts';
 import { existsSync } from 'node:fs';
-import { fromEnv, defaultLogPath, thresholds, rules } from '../src/config.ts';
+import { fromEnv, defaultLogPath, thresholds } from '../src/config.ts';
+import { rules } from '../src/rules-file.ts';
 import { ask, nodeFetch, JevBlockedError } from '../src/jev.ts';
 import { appendLog } from '../src/log.ts';
 import { execRunner, recentTurns } from '../src/bash-context.ts';

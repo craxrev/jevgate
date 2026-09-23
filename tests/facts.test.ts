@@ -16,7 +16,8 @@ import {
   rawScores,
   type Facts,
 } from '../src/facts.ts';
-import { fromRaw, fromEnv, thresholds, rules, knownHosts, DEFAULTS } from '../src/config.ts';
+import { fromRaw, fromEnv, thresholds, knownHosts, DEFAULTS } from '../src/config.ts';
+import { rules } from '../src/rules-file.ts';
 import type { JevResponse } from '../src/jev.ts';
 
 const choice = (p: Record<string, number>) => ({ type: 'choice' as const, choice: Object.keys(p)[0]!, probabilities: p, confidence: 0.5 });

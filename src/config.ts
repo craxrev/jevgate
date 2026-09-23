@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { DEFAULT_RULES, DEFAULT_THRESHOLDS, mergeRules, type Outcome, type Rules, type Thresholds } from './facts.ts';
+// No node: imports here: the function-hook module (hooks/compact.ts) loads this file.
+import { DEFAULT_THRESHOLDS, type Outcome, type Thresholds } from './facts.ts';
 
 export type Config = {
   apiKey?: string;
@@ -180,16 +180,6 @@ export function thresholds(cfg: Config): Thresholds {
 
 export function knownHosts(cfg: Config): string[] {
   return cfg.knownHosts.split(',').map((h) => h.trim()).filter(Boolean);
-}
-
-/** The default rules with the rules file on top; a missing or broken file keeps the defaults. */
-export function rules(cfg: Config, mode: string | undefined): Rules {
-  if (!cfg.rulesFile) return DEFAULT_RULES;
-  try {
-    return mergeRules(DEFAULT_RULES, JSON.parse(readFileSync(cfg.rulesFile, 'utf8')), mode);
-  } catch {
-    return DEFAULT_RULES;
-  }
 }
 
 export function defaultLogPath(env: Record<string, string | undefined>): string {

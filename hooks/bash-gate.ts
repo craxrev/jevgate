@@ -6,7 +6,8 @@
 // is a deny in bypass mode, where nothing else would judge, and silent
 // elsewhere; a request its gateway blocks is an ask.
 import { readStdinJson, emit } from '../src/stdin.ts';
-import { fromEnv, defaultLogPath, thresholds, rules, knownHosts } from '../src/config.ts';
+import { fromEnv, defaultLogPath, thresholds, knownHosts } from '../src/config.ts';
+import { rules } from '../src/rules-file.ts';
 import { ask, nodeFetch, JevBlockedError } from '../src/jev.ts';
 import { appendLog } from '../src/log.ts';
 import { checkFree } from '../src/free.ts';

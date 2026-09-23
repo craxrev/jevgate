@@ -8,7 +8,8 @@
 import { readStdinJson, emit } from '../src/stdin.ts';
 import { fromEnv, defaultLogPath, thresholds, knownHosts } from '../src/config.ts';
 import { rules } from '../src/rules-file.ts';
-import { ask, nodeFetch, JevBlockedError } from '../src/jev.ts';
+import { ask, JevBlockedError } from '../src/jev.ts';
+import { nodeFetch, newTrace, traceFields } from '../src/node-fetch.ts';
 import { appendLog } from '../src/log.ts';
 import { checkFree } from '../src/free.ts';
 import { gatherState } from '../src/bash-context.ts';
@@ -52,6 +53,7 @@ async function main(): Promise<void> {
   }
 
   const t0 = Date.now();
+  const trace = newTrace();
   const state = gatherState({
     command,
     parsed: free.parsed,
@@ -62,9 +64,9 @@ async function main(): Promise<void> {
     knownHosts: knownHosts(cfg),
   });
   try {
-    const res = await ask(nodeFetch(cfg.timeoutMs), { apiKey: cfg.apiKey, model: cfg.model }, state, BASH_QUESTIONS);
+    const res = await ask(nodeFetch(cfg.timeoutMs, trace), { apiKey: cfg.apiKey, model: cfg.model }, state, BASH_QUESTIONS);
     const d = decideFacts(resolveFacts(res, BASH_FACTS, thresholds(cfg)), rules(cfg, mode), cfg.unsureOutcome);
-    const entry = { ...base, facts: d.facts, ...(res.retried ? { retried: true } : {}), scores: rawScores(res, BASH_FACTS), ms: Date.now() - t0 };
+    const entry = { ...base, facts: d.facts, ...(res.retried ? { retried: true } : {}), scores: rawScores(res, BASH_FACTS), ...traceFields(trace, t0), ms: Date.now() - t0 };
     if (d.action === 'deny') {
       appendLog(logPath, { ...entry, action: 'denied', category: d.flags.join(', '), reason: d.reason });
       emit(denyOutput(d.reason));
@@ -77,14 +79,14 @@ async function main(): Promise<void> {
     }
   } catch (err) {
     if (err instanceof JevBlockedError) {
-      appendLog(logPath, { ...base, action: 'asked', category: 'blocked', reason: BLOCKED_REASON, error: String(err), ms: Date.now() - t0 });
+      appendLog(logPath, { ...base, action: 'asked', category: 'blocked', reason: BLOCKED_REASON, error: String(err), ...traceFields(trace, t0), ms: Date.now() - t0 });
       emit(askOutput(BLOCKED_REASON));
       return;
     }
     // Bypass mode has no review behind this hook, so nothing unjudged runs there.
     // Elsewhere Claude Code's own flow (rules, classifier, prompts) takes over.
     const closed = failsClosed(mode);
-    appendLog(logPath, { ...base, action: 'unreachable', closed, error: String(err), ms: Date.now() - t0 });
+    appendLog(logPath, { ...base, action: 'unreachable', closed, error: String(err), ...traceFields(trace, t0), tries: trace.tries, ms: Date.now() - t0 });
     if (closed) emit(denyOutput(UNREACHABLE_REASON));
   }
 }

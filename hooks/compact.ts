@@ -324,7 +324,9 @@ export const register: Register = (on: On, options: PluginOptions) => {
       Box,
       { flexDirection: 'column', width: e.props.bodyColumns, paddingX: 1 },
       ...lines.map((l) =>
-        l.dimHead
+        l.segments
+          ? h(Text, { bold: l.bold, wrap: 'truncate-end' }, ...l.segments.map((g) => h(Text, { color: g.color, dimColor: g.dim }, g.text)))
+          : l.dimHead
           ? h(Text, { color: l.color, bold: l.bold, wrap: 'truncate-end' }, h(Text, { dimColor: true }, l.text.slice(0, l.dimHead)), l.text.slice(l.dimHead))
           : h(Text, { color: l.color, dimColor: l.dim, bold: l.bold, wrap: 'truncate-end' }, l.text || ' '),
       ),

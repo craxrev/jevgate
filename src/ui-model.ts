@@ -16,6 +16,11 @@ export type LogEntry = {
   scores?: Record<string, number>;
   facts?: Record<string, string>;
   ms?: number;
+  /** Jev call timing, see `Trace` in jev.ts. */
+  prepMs?: number;
+  connectMs?: number;
+  serverMs?: number;
+  tries?: number;
   blocks?: number;
 };
 
@@ -138,6 +143,15 @@ export function kb(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }
 
+/** One Jev call split by where its time went; `server` is missing when Jev did not answer. */
+export type Timing = { ms: number; prep: number; connect: number; server?: number; answered: boolean; tries: number };
+
+export function timingOf(e: LogEntry): Timing | undefined {
+  if (typeof e.ms !== 'number' || typeof e.prepMs !== 'number') return undefined;
+  const answered = e.action !== 'unreachable' && e.action !== 'error';
+  return { ms: e.ms, prep: e.prepMs, connect: e.connectMs ?? 0, server: answered ? e.serverMs : undefined, answered, tries: e.tries ?? 1 };
+}
+
 export type BashStats = {
   free: number;
   /** Judged and allowed (in auto mode the classifier is skipped). */
@@ -159,12 +173,16 @@ export type BashStats = {
   avgMs: number;
   /** Latencies of the newest judged commands, oldest first, at most 200. */
   msRecent: number[];
+  /** Parallel to `msRecent`: the call's timing, or undefined for calls logged before timings were. */
+  timingRecent: (Timing | undefined)[];
+  /** The newest Jev call of any hook, answered or not. */
+  lastCall?: Timing;
   blocks: number;
   agentDenies: number;
 };
 
 export function bashStats(entries: readonly LogEntry[], session?: string): BashStats {
-  const s: BashStats = { free: 0, allowed: 0, asked: 0, approved: 0, rejected: 0, blocked: 0, askedBy: [], denied: 0, unreachable: 0, categories: [], avgMs: 0, msRecent: [], blocks: 0, agentDenies: 0 };
+  const s: BashStats = { free: 0, allowed: 0, asked: 0, approved: 0, rejected: 0, blocked: 0, askedBy: [], denied: 0, unreachable: 0, categories: [], avgMs: 0, msRecent: [], timingRecent: [], blocks: 0, agentDenies: 0 };
   const cats = new Map<string, number>();
   const asks = new Map<string, number>();
   const bump = (m: Map<string, number>, e: LogEntry) => { for (const f of flagsOf(e)) m.set(f, (m.get(f) ?? 0) + 1); };
@@ -172,6 +190,8 @@ export function bashStats(entries: readonly LogEntry[], session?: string): BashS
   let msN = 0;
   for (const e of entries) {
     if (session !== undefined && e.session !== session) continue;
+    const timing = timingOf(e);
+    if (timing) s.lastCall = timing;
     if (e.feature === 'done' && e.action === 'block') s.blocks++;
     if (e.feature === 'agent' && e.action === 'deny') s.agentDenies++;
     if (e.feature !== 'bash' && e.feature !== 'file') continue;
@@ -192,7 +212,8 @@ export function bashStats(entries: readonly LogEntry[], session?: string): BashS
       msSum += e.ms;
       msN++;
       s.msRecent.push(e.ms);
-      if (s.msRecent.length > 200) s.msRecent.shift();
+      s.timingRecent.push(timing);
+      if (s.msRecent.length > 200) { s.msRecent.shift(); s.timingRecent.shift(); }
     }
   }
   s.categories = [...cats].sort((a, b) => b[1] - a[1]);

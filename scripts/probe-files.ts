@@ -4,7 +4,8 @@
 // there is worth a look). Prints disagreements and a summary.
 // Usage: TYPESAFE_API_KEY=... node scripts/probe-files.ts [--real]
 import { readdirSync, readFileSync } from 'node:fs';
-import { ask, nodeFetch } from '../src/jev.ts';
+import { ask } from '../src/jev.ts';
+import { nodeFetch } from '../src/node-fetch.ts';
 import { FILE_FACTS, FILE_QUESTIONS, resolveFacts, decideFacts, type Outcome } from '../src/facts.ts';
 import { insideProject, contentHead, type FileInput, type FileState } from '../src/file-policy.ts';
 import { parseTranscript } from '../src/transcript.ts';

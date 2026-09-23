@@ -9,7 +9,8 @@ import { readStdinJson, emit } from '../src/stdin.ts';
 import { existsSync } from 'node:fs';
 import { fromEnv, defaultLogPath, thresholds } from '../src/config.ts';
 import { rules } from '../src/rules-file.ts';
-import { ask, nodeFetch, JevBlockedError } from '../src/jev.ts';
+import { ask, JevBlockedError } from '../src/jev.ts';
+import { nodeFetch, newTrace, traceFields } from '../src/node-fetch.ts';
 import { appendLog } from '../src/log.ts';
 import { execRunner, recentTurns } from '../src/bash-context.ts';
 import { denyOutput, askOutput, allowOutput, failsClosed, UNREACHABLE_REASON, BLOCKED_REASON } from '../src/bash-policy.ts';
@@ -71,15 +72,16 @@ async function main(): Promise<void> {
   }
 
   const t0 = Date.now();
+  const trace = newTrace();
   const state: FileState = { command: `${tool} ${path}`, tool, path, cwd: input.cwd, repo_root: repoRoot, exists: existsSync(path), home: process.env.HOME };
   const head = contentHead(input.tool_input);
   if (head) state.content_head = head;
   const recent = recentTurns(input.transcript_path, cfg.bashRecentTurns);
   if (recent) state.recent = recent;
   try {
-    const res = await ask(nodeFetch(cfg.timeoutMs), { apiKey: cfg.apiKey, model: cfg.model }, state, FILE_QUESTIONS);
+    const res = await ask(nodeFetch(cfg.timeoutMs, trace), { apiKey: cfg.apiKey, model: cfg.model }, state, FILE_QUESTIONS);
     const d = decideFacts(resolveFacts(res, FILE_FACTS, thresholds(cfg)), rules(cfg, mode), cfg.unsureOutcome);
-    const entry = { ...base, facts: d.facts, ...(res.retried ? { retried: true } : {}), scores: rawScores(res, FILE_FACTS), ms: Date.now() - t0 };
+    const entry = { ...base, facts: d.facts, ...(res.retried ? { retried: true } : {}), scores: rawScores(res, FILE_FACTS), ...traceFields(trace, t0), ms: Date.now() - t0 };
     if (d.action === 'deny') {
       appendLog(logPath, { ...entry, action: 'denied', category: d.flags.join(', '), reason: d.reason });
       emit(denyOutput(d.reason));
@@ -92,12 +94,12 @@ async function main(): Promise<void> {
     }
   } catch (err) {
     if (err instanceof JevBlockedError) {
-      appendLog(logPath, { ...base, action: 'asked', category: 'blocked', reason: BLOCKED_REASON, error: String(err), ms: Date.now() - t0 });
+      appendLog(logPath, { ...base, action: 'asked', category: 'blocked', reason: BLOCKED_REASON, error: String(err), ...traceFields(trace, t0), ms: Date.now() - t0 });
       emit(askOutput(BLOCKED_REASON));
       return;
     }
     const closed = failsClosed(mode);
-    appendLog(logPath, { ...base, action: 'unreachable', closed, error: String(err), ms: Date.now() - t0 });
+    appendLog(logPath, { ...base, action: 'unreachable', closed, error: String(err), ...traceFields(trace, t0), tries: trace.tries, ms: Date.now() - t0 });
     if (closed) emit(denyOutput(UNREACHABLE_REASON));
   }
 }

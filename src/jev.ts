@@ -137,20 +137,6 @@ export function noul(res: JevResponse, name: string): number {
   return a.noul;
 }
 
-/** Node fetch with a hard timeout; the hook must never hang Claude Code. */
-export function nodeFetch(timeoutMs: number): FetchLike {
-  return async (url, init) => {
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), timeoutMs);
-    try {
-      const r = await fetch(url, { ...init, signal: ctl.signal });
-      return { status: r.status, ok: r.ok, text: await r.text() };
-    } finally {
-      clearTimeout(t);
-    }
-  };
-}
-
 /** Character-based token estimate, deliberately pessimistic. */
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3.5);

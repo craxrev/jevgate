@@ -1,7 +1,8 @@
 // Layer-2 probe: real Jev, hand-written inputs. Prints scores so thresholds
 // and question wording can be tuned from data. Usage: TYPESAFE_API_KEY=... node scripts/probe.ts [done|agent|all]
 // The Bash and file guards' facts have their own probe: scripts/probe-facts.ts.
-import { ask, nodeFetch } from '../src/jev.ts';
+import { ask } from '../src/jev.ts';
+import { nodeFetch } from '../src/node-fetch.ts';
 import * as done from '../src/done-policy.ts';
 import * as agent from '../src/agent-policy.ts';
 

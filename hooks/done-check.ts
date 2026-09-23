@@ -5,7 +5,8 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { readStdinJson, emit } from '../src/stdin.ts';
 import { fromEnv, defaultLogPath } from '../src/config.ts';
-import { ask, nodeFetch } from '../src/jev.ts';
+import { ask } from '../src/jev.ts';
+import { nodeFetch, newTrace, traceFields } from '../src/node-fetch.ts';
 import { appendLog } from '../src/log.ts';
 import { readTranscript, latestUserPrompt, firstUserPrompt, turnToolUses } from '../src/transcript.ts';
 import { QUESTIONS, decide, blockOutput, nextCounter, turnChangedFiles, type Counter, type DoneState } from '../src/done-policy.ts';
@@ -164,7 +165,8 @@ async function main(): Promise<void> {
   }
 
   const t0 = Date.now();
-  const res = await ask(nodeFetch(Math.max(cfg.timeoutMs, 8000)), { apiKey: cfg.apiKey, model: cfg.model }, state, QUESTIONS);
+  const trace = newTrace();
+  const res = await ask(nodeFetch(Math.max(cfg.timeoutMs, 8000), trace), { apiKey: cfg.apiKey, model: cfg.model }, state, QUESTIONS);
   const d = decide(res, { coverMin: cfg.doneCoverMin, claimsMin: cfg.doneClaimsMin, leftoverMax: cfg.doneLeftoverMax });
   appendLog(logPath, {
     feature: 'done',
@@ -173,6 +175,7 @@ async function main(): Promise<void> {
     scores: d.scores,
     blocks: counter.blocks,
     diffChars: collected.diff.length,
+    ...traceFields(trace, t0),
     ms: Date.now() - t0,
   });
   if (d.action === 'block') {

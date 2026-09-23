@@ -3,7 +3,8 @@
 // Usage: TYPESAFE_API_KEY=... node scripts/probe-facts.ts [--only hand|corpus] [--hit 0.5] [--none 0.6] [--req 0.6] [--unreq 0.25] [--out results.jsonl]
 //        node scripts/probe-facts.ts --replay results.jsonl [--hit …]   re-scores saved answers without calling Jev
 import { readFileSync, writeFileSync } from 'node:fs';
-import { ask, nodeFetch, type JevResponse } from '../src/jev.ts';
+import { ask, type JevResponse } from '../src/jev.ts';
+import { nodeFetch } from '../src/node-fetch.ts';
 import { checkFree } from '../src/free.ts';
 import { BASH_FACTS, BASH_QUESTIONS as Q, resolveFacts, decideFacts, type Outcome } from '../src/facts.ts';
 

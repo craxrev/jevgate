@@ -54,7 +54,7 @@ test('bashStats per session and all-time: flags per fact, your answers, mean lat
   const s1 = bashStats(entries, 's1');
   assert.deepEqual(s1, {
     free: 1, allowed: 1, asked: 2, approved: 1, rejected: 0, blocked: 1, askedBy: [['deletes local_no_copy', 1]], denied: 2, unreachable: 1,
-    categories: [['deletes remote', 1], ['not requested', 1], ['file:exposes_secret', 1]], avgMs: 420, msRecent: [300, 880, 410, 90], blocks: 1, agentDenies: 0,
+    categories: [['deletes remote', 1], ['not requested', 1], ['file:exposes_secret', 1]], avgMs: 420, msRecent: [300, 880, 410, 90], timingRecent: [undefined, undefined, undefined, undefined], blocks: 1, agentDenies: 0,
   });
   const all = bashStats(entries);
   assert.equal(all.allowed, 2);
@@ -84,4 +84,19 @@ test('askAnswer reads your answer off how an asked call settled', () => {
   assert.equal(askAnswer({ text: "The user doesn't want to proceed with this tool use. The tool use was rejected", isError: true }), 'ask-rejected');
   assert.equal(askAnswer({ result: 'User rejected tool use', isError: true }), 'ask-rejected');
   assert.equal(askAnswer({ result: 'Error: jevgate: asking · deletes local_no_copy', text: 'jevgate: asking · deletes local_no_copy', isError: true }), undefined, 'refused with no one to ask');
+});
+
+test('bashStats keeps call timings next to latencies, and the newest Jev call of any hook', () => {
+  const entries = parseLog([
+    { ts: '1', feature: 'bash', action: 'allow', session: 's', ms: 600, prepMs: 150, connectMs: 90, serverMs: 70 },
+    { ts: '2', feature: 'bash', action: 'allow', session: 's', ms: 500 },
+    { ts: '3', feature: 'bash', action: 'unreachable', session: 's', ms: 8132, prepMs: 150, connectMs: 90, tries: 2 },
+    { ts: '4', feature: 'done', action: 'pass', session: 's', ms: 900, prepMs: 1, connectMs: 80, serverMs: 300 },
+    { ts: '5', feature: 'bash', action: 'free', session: 's' },
+  ].map((e) => JSON.stringify(e)).join('\n'));
+  const s = bashStats(entries, 's');
+  assert.deepEqual(s.msRecent, [600, 500]);
+  assert.deepEqual(s.timingRecent, [{ ms: 600, prep: 150, connect: 90, server: 70, answered: true, tries: 1 }, undefined]);
+  assert.deepEqual(s.lastCall, { ms: 900, prep: 1, connect: 80, server: 300, answered: true, tries: 1 });
+  assert.deepEqual(bashStats(entries.slice(0, 3), 's').lastCall, { ms: 8132, prep: 150, connect: 90, server: undefined, answered: false, tries: 2 });
 });

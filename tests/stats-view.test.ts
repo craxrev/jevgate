@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bar, spark, statsLines } from '../src/stats-view.ts';
+import { bar, meanTiming, spark, statsLines, timingBar } from '../src/stats-view.ts';
 import type { BashStats } from '../src/ui-model.ts';
 
 const stats = (over: Partial<BashStats> = {}): BashStats => ({
-  free: 22, allowed: 10, asked: 3, approved: 2, rejected: 1, blocked: 0, askedBy: [['deletes local_no_copy', 3]], denied: 4, unreachable: 0, categories: [['exfiltrates', 2], ['reads_secrets', 1]], avgMs: 900, msRecent: [800, 1200, 400], blocks: 0, agentDenies: 1, ...over,
+  free: 22, allowed: 10, asked: 3, approved: 2, rejected: 1, blocked: 0, askedBy: [['deletes local_no_copy', 3]], denied: 4, unreachable: 0, categories: [['exfiltrates', 2], ['reads_secrets', 1]], avgMs: 900, msRecent: [800, 1200, 400], timingRecent: [undefined, undefined, undefined], blocks: 0, agentDenies: 1, ...over,
 });
 
 test('bar fills proportionally and clamps', () => {
@@ -69,4 +69,38 @@ test('spark scales to the 90th percentile, so one outlier does not flatten the r
   assert.notEqual(line[0], '▁', 'a normal call keeps visible height');
   assert.equal(spark([]), '');
   assert.equal(spark([0, 0]), '');
+});
+
+const tm = (ms: number, prep: number, connect: number, server?: number) => ({ ms, prep, connect, server, answered: server !== undefined, tries: server !== undefined ? 1 : 2 });
+
+test('timingBar draws the parts in order, scaled to the shared max', () => {
+  const segs = timingBar(tm(1000, 100, 100, 500), 1000, 20);
+  assert.deepEqual(segs.map((g) => g.text.length), [2, 2, 6, 10]);
+  assert.deepEqual(segs.map((g) => g.color), [undefined, 'blue', 'magenta', 'cyan']);
+  assert.equal(timingBar(tm(500, 100, 100, 200), 1000, 20).map((g) => g.text).join('').length, 10, 'half the max, half the width');
+});
+
+test('an unanswered call ends in a dotted wait', () => {
+  const segs = timingBar(tm(8000, 200, 100), 8000, 40);
+  assert.equal(segs.at(-1)!.text[0], '·');
+  assert.equal(segs.map((g) => g.text).join('').length, 40);
+});
+
+test('meanTiming averages answered calls only', () => {
+  assert.equal(meanTiming([tm(8000, 0, 0)]), undefined);
+  assert.deepEqual(meanTiming([tm(400, 100, 80, 70), tm(600, 100, 80, 270), tm(8000, 0, 0)]), { ms: 500, prep: 100, connect: 80, server: 170, answered: true, tries: 1 });
+});
+
+test('the pane shows where the time goes for the last call and the average', () => {
+  const lines = statsLines({ session: stats({ msRecent: [400, 600], timingRecent: [tm(400, 100, 80, 70), tm(600, 100, 80, 270)], lastCall: tm(8132, 150, 90) }), all: stats(), width: 60, entries: 5 });
+  const text = lines.map((l) => l.text);
+  const i = text.indexOf('Where the time goes');
+  assert.ok(i > text.indexOf('Jev latency'));
+  assert.match(text[i + 1]!, /^ last\s+8132ms /);
+  assert.match(text[i + 2]!, /^ avg\s+500ms /);
+  assert.ok(text.includes(' last call: Jev did not answer (2 tries)'));
+  assert.ok(text.includes(' avg of the last 2 answered calls'));
+  assert.ok(lines[i + 1]!.segments!.length > 1);
+  const none = statsLines({ session: stats(), all: stats(), width: 60, entries: 5 }).map((l) => l.text);
+  assert.ok(!none.includes('Where the time goes'), 'hidden until a call has timings');
 });

@@ -1,9 +1,13 @@
 // The /jevgate pane as plain lines: text plus style, no `$`, so the layout is
 // unit-testable and the function-hook module only maps lines to Text elements.
-import type { BashStats } from './ui-model.ts';
+import type { BashStats, Timing } from './ui-model.ts';
 
-/** One pane line; `dimHead` characters at its start are drawn dim (the chart's empty baseline). */
-export type Line = { text: string; color?: string; dim?: boolean; bold?: boolean; dimHead?: number };
+export type Segment = { text: string; color?: string; dim?: boolean };
+/**
+ * One pane line; `dimHead` characters at its start are drawn dim (the chart's empty baseline).
+ * With `segments`, those are drawn instead and `text` is their concatenation.
+ */
+export type Line = { text: string; color?: string; dim?: boolean; bold?: boolean; dimHead?: number; segments?: Segment[] };
 
 const FULL = '█';
 const EMPTY = '░';
@@ -16,7 +20,6 @@ export function bar(n: number, total: number, width: number): string {
   return FULL.repeat(Math.min(width, filled)) + EMPTY.repeat(Math.max(0, width - filled));
 }
 
-/** One spark character per value, scaled to the highest. */
 /**
  * One block per value, scaled to the 90th percentile so a single slow call does
  * not flatten the rest (above it is a full block); under 10 values, to the highest.
@@ -29,6 +32,45 @@ export function spark(values: readonly number[]): string {
   const p90 = sorted[Math.floor(0.9 * (sorted.length - 1))]!;
   const max = values.length < 10 || p90 <= 0 ? top : p90;
   return values.map((v) => SPARK[Math.min(7, Math.floor((v / max) * 7.999))]!).join('');
+}
+
+/** The parts of a call in the order they happen; an unanswered call ends in its wait for no answer. */
+export const TIMING_PARTS = [
+  { name: 'prep', dim: true },
+  { name: 'connect', color: 'blue' },
+  { name: 'network', color: 'magenta' },
+  { name: 'Jev', color: 'cyan' },
+] as const;
+
+function parts(t: Timing): number[] {
+  const rest = Math.max(0, t.ms - t.prep - t.connect - (t.server ?? 0));
+  return t.answered ? [t.prep, t.connect, rest, t.server ?? 0] : [t.prep, t.connect, rest];
+}
+
+/** A bar `t.ms / max` of `width` cells, one colored run per part. */
+export function timingBar(t: Timing, max: number, width: number): Segment[] {
+  const out: Segment[] = [];
+  let cum = 0;
+  let drawn = 0;
+  parts(t).forEach((ms, i) => {
+    cum += ms;
+    const to = max > 0 ? Math.min(width, Math.round((width * cum) / max)) : 0;
+    if (to > drawn) {
+      const p = TIMING_PARTS[i]!;
+      const n = to - drawn;
+      out.push(!t.answered && i === 2 ? { text: '·'.repeat(n), color: COLORS.unreachable } : { text: '█'.repeat(n), color: 'color' in p ? p.color : undefined, dim: 'dim' in p });
+      drawn = to;
+    }
+  });
+  return out;
+}
+
+/** The mean of each part over answered calls. */
+export function meanTiming(ts: readonly Timing[]): Timing | undefined {
+  const a = ts.filter((t) => t.answered);
+  if (!a.length) return undefined;
+  const m = (f: (t: Timing) => number) => Math.round(a.reduce((n, t) => n + f(t), 0) / a.length);
+  return { ms: m((t) => t.ms), prep: m((t) => t.prep), connect: m((t) => t.connect), server: m((t) => t.server ?? 0), answered: true, tries: 1 };
 }
 
 const pct = (n: number, total: number) => (total ? `${Math.round((100 * n) / total)}%` : '');
@@ -83,6 +125,26 @@ export function statsLines(v: StatsView): Line[] {
   out.push({ text: recent.length ? ` last ${recent.length} calls · peak ${Math.max(...recent)}ms` : ' no judged calls yet', dim: true });
   out.push({ text: ` avg ${s.avgMs}ms this session · ${a.avgMs}ms all-time`, dim: true });
   out.push({ text: '' });
+
+  const avg = meanTiming(s.timingRecent.slice(-chartW).filter((t) => t !== undefined));
+  if (s.lastCall || avg) {
+    out.push({ text: 'Where the time goes', bold: true });
+    const max = Math.max(s.lastCall?.ms ?? 0, avg?.ms ?? 0);
+    const tbar = (label: string, t: Timing) => {
+      const segs = [{ text: ` ${label.padEnd(5)}${String(t.ms).padStart(6)}ms ` }, ...timingBar(t, max, chartW - 14)];
+      out.push({ text: segs.map((g) => g.text).join(''), segments: segs });
+    };
+    if (s.lastCall) tbar('last', s.lastCall);
+    if (avg) tbar('avg', avg);
+    const legend: Segment[] = [];
+    for (const p of TIMING_PARTS) legend.push({ text: ' █', color: 'color' in p ? p.color : undefined, dim: 'dim' in p }, { text: ` ${p.name} `, dim: true });
+    out.push({ text: legend.map((g) => g.text).join(''), segments: legend });
+    if (s.lastCall && !s.lastCall.answered) {
+      out.push({ text: ` last call: Jev did not answer${s.lastCall.tries > 1 ? ` (${s.lastCall.tries} tries)` : ''}`, color: COLORS.unreachable });
+    }
+    if (avg) out.push({ text: ` avg of the last ${s.timingRecent.slice(-chartW).filter((t) => t?.answered).length} answered calls`, dim: true });
+    out.push({ text: '' });
+  }
 
   const at = total(a);
   out.push({ text: `All-time · ${at} calls`, bold: true });

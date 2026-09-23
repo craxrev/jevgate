@@ -62,5 +62,8 @@ test('turnChangedFiles: file tools and writing Bash count, reads and plain runs 
   assert.equal(turnChangedFiles([{ name: 'Edit', input: {} }]), true);
   assert.equal(turnChangedFiles([b("sed -i '' s/a/b/ f.ts")]), true);
   assert.equal(turnChangedFiles([b('echo x > notes.md')]), true);
-  assert.equal(turnChangedFiles([b('git commit -m x')]), true);
+  assert.equal(turnChangedFiles([b('git push 2>&1 | tail -1'), b('git fetch origin'), b('git -C ../x pull --ff-only'), b('git commit -m x'), b('git tag v1')]), false);
+  assert.equal(turnChangedFiles([b('git checkout -- a.ts')]), true);
+  assert.equal(turnChangedFiles([b('git -C sub stash pop')]), true);
+  assert.equal(turnChangedFiles([b('git add -A && git commit -m x > log.txt')]), true, 'the redirect writes');
 });

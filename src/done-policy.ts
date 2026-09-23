@@ -110,10 +110,21 @@ export function nextCounter(prev: Counter | undefined, stopHookActive: boolean):
 }
 
 const FILE_WRITERS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+/** git subcommands that change files in the working tree; push, fetch, pull, commit, tag and the like do not. */
+const GIT_EDITS = new Set(['apply', 'am', 'cherry-pick', 'revert', 'merge', 'rebase', 'mv', 'rm', 'checkout', 'switch', 'restore', 'reset', 'stash', 'clean']);
+
+/** The git subcommand of a segment, past `-C <dir>` and `-c <key=value>`. */
+function gitSubcommand(args: readonly string[]): string | undefined {
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '-C' || args[i] === '-c') i++;
+    else if (!args[i]!.startsWith('-')) return args[i];
+  }
+  return undefined;
+}
 
 /**
  * Whether the turn may have changed files: a file tool, or a Bash command that
- * touches git or files (writers, redirects, inline scripts). A turn that only
+ * writes (writers, redirects, inline scripts, git commands that edit the tree). A turn that only
  * ran or read things has nothing for the done-check to judge; the repository's
  * older changes are not its work.
  */
@@ -122,6 +133,8 @@ export function turnChangedFiles(uses: readonly ToolUse[]): boolean {
     if (FILE_WRITERS.has(u.name)) return true;
     if (u.name !== 'Bash' || typeof u.input.command !== 'string') return false;
     const free = checkFree(u.input.command);
-    return !free.free && needsGitStatus(free.parsed);
+    if (free.free) return false;
+    const segments = free.parsed.segments.filter((s) => s.program !== 'git' || GIT_EDITS.has(gitSubcommand(s.args) ?? ''));
+    return needsGitStatus({ ...free.parsed, segments });
   });
 }

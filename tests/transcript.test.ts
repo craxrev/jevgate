@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTranscript, latestUserPrompt, firstUserPrompt, recentTurns } from '../src/transcript.ts';
+import { parseTranscript, latestUserPrompt, firstUserPrompt, recentTurns, turnToolUses } from '../src/transcript.ts';
 
 const lines = [
   { type: 'mode', mode: 'normal' },
@@ -41,4 +41,24 @@ test('recentTurns caps count and length', () => {
   const r = recentTurns(t, 2, 3);
   assert.equal(r.length, 2);
   assert.equal(r[1]!.text, 'don […]');
+});
+
+test('turnToolUses: tool calls after the turn prompt, older turns and subagents left out', () => {
+  const u = (content: unknown, promptId?: string, extra: Record<string, unknown> = {}) => JSON.stringify({ type: 'user', promptId, message: { role: 'user', content }, ...extra });
+  const tool = (name: string, input: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+    JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', name, input }] }, ...extra });
+  const jsonl = [
+    u('first ask', 'p1'),
+    tool('Edit', { file_path: 'a.ts' }),
+    u([{ type: 'tool_result' }], 'p1'),
+    u('now run git log', 'p2'),
+    tool('Bash', { command: 'git log --oneline' }),
+    tool('Write', { file_path: 'x' }, { isSidechain: true }),
+    u([{ type: 'tool_result' }], 'p2'),
+    u('Stop hook feedback: blocked', 'p2'),
+    tool('Bash', { command: 'ls' }),
+  ].join('\n');
+  assert.deepEqual(turnToolUses(jsonl, 'p2').map((t) => t.name + ' ' + String(t.input.command)), ['Bash git log --oneline', 'Bash ls']);
+  assert.deepEqual(turnToolUses(jsonl, 'p1').map((t) => t.name), ['Edit', 'Bash', 'Bash']);
+  assert.deepEqual(turnToolUses(jsonl).map((t) => t.name), ['Bash'], 'no prompt id: after the last typed prompt');
 });

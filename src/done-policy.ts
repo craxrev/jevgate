@@ -1,5 +1,8 @@
 import type { Questions, JevResponse } from './jev.ts';
 import { noul, score } from './jev.ts';
+import type { ToolUse } from './transcript.ts';
+import { checkFree } from './free.ts';
+import { needsGitStatus } from './bash-policy.ts';
 
 export type DoneState = {
   request_first?: string;
@@ -104,4 +107,21 @@ export type Counter = { blocks: number };
 export function nextCounter(prev: Counter | undefined, stopHookActive: boolean): Counter {
   if (!stopHookActive || !prev) return { blocks: 0 };
   return { blocks: prev.blocks };
+}
+
+const FILE_WRITERS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+
+/**
+ * Whether the turn may have changed files: a file tool, or a Bash command that
+ * touches git or files (writers, redirects, inline scripts). A turn that only
+ * ran or read things has nothing for the done-check to judge; the repository's
+ * older changes are not its work.
+ */
+export function turnChangedFiles(uses: readonly ToolUse[]): boolean {
+  return uses.some((u) => {
+    if (FILE_WRITERS.has(u.name)) return true;
+    if (u.name !== 'Bash' || typeof u.input.command !== 'string') return false;
+    const free = checkFree(u.input.command);
+    return !free.free && needsGitStatus(free.parsed);
+  });
 }

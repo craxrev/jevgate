@@ -71,3 +71,41 @@ export function recentTurns(turns: Turn[], n: number, maxChars = 2000): Turn[] {
     text: t.text.length > maxChars ? t.text.slice(0, maxChars) + ' […]' : t.text,
   }));
 }
+
+export type ToolUse = { name: string; input: Record<string, unknown> };
+
+/**
+ * Main-loop tool calls of the current turn: those after the first user entry
+ * carrying `promptId` (every user entry of a turn carries it; assistant entries
+ * do not). Without a match, those after the last typed user prompt.
+ */
+export function turnToolUses(jsonl: string, promptId?: string): ToolUse[] {
+  const entries: Entry[] = [];
+  for (const line of jsonl.split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const e = JSON.parse(line) as Entry;
+      if (!e.isSidechain) entries.push(e);
+    } catch {
+      // skip
+    }
+  }
+  let start = promptId ? entries.findIndex((e) => e.type === 'user' && e.promptId === promptId) : -1;
+  if (start < 0) {
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const e = entries[i]!;
+      if (e.type === 'user' && typeof e.message?.content === 'string') {
+        start = i;
+        break;
+      }
+    }
+  }
+  const out: ToolUse[] = [];
+  for (const e of entries.slice(start + 1)) {
+    if (e.type !== 'assistant' || !Array.isArray(e.message?.content)) continue;
+    for (const b of e.message.content as (Block & { name?: string; input?: Record<string, unknown> })[]) {
+      if (b.type === 'tool_use' && typeof b.name === 'string') out.push({ name: b.name, input: b.input ?? {} });
+    }
+  }
+  return out;
+}

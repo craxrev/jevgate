@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decide, blockOutput, nextCounter, coverageWords, QUESTIONS } from '../src/done-policy.ts';
+import { decide, blockOutput, nextCounter, coverageWords, QUESTIONS, turnChangedFiles } from '../src/done-policy.ts';
 import type { JevResponse } from '../src/jev.ts';
 
 const res = (coverage: number, claims_backed: number, leftovers: number, asks_user: number): JevResponse => ({
@@ -52,4 +52,15 @@ test('counter resets on a fresh stop and persists while the hook is re-entering'
   assert.deepEqual(nextCounter({ blocks: 1 }, false), { blocks: 0 });
   assert.deepEqual(nextCounter({ blocks: 1 }, true), { blocks: 1 });
   assert.deepEqual(nextCounter(undefined, true), { blocks: 0 });
+});
+
+test('turnChangedFiles: file tools and writing Bash count, reads and plain runs do not', () => {
+  const b = (command: string) => ({ name: 'Bash', input: { command } });
+  assert.equal(turnChangedFiles([b('git log --oneline'), b('ls -la'), b('npm test')]), false);
+  assert.equal(turnChangedFiles([{ name: 'Read', input: { file_path: 'a' } }]), false);
+  assert.equal(turnChangedFiles([]), false);
+  assert.equal(turnChangedFiles([{ name: 'Edit', input: {} }]), true);
+  assert.equal(turnChangedFiles([b("sed -i '' s/a/b/ f.ts")]), true);
+  assert.equal(turnChangedFiles([b('echo x > notes.md')]), true);
+  assert.equal(turnChangedFiles([b('git commit -m x')]), true);
 });

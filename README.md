@@ -81,7 +81,8 @@ Write instead of `echo >>`. Reading a credential file (`.env`, `~/.ssh`,
 
 **Done-check.** When Claude says it is done, Jev rates how much of your request
 the diff covers: none, a small part, most, all. Below "all" Claude is sent back
-with the missing rung named. At most twice per turn.
+with the missing rung named. At most twice per turn. A turn that changed no
+files (it only ran or read things) is not checked.
 
 **Subagent gate.** A subagent is refused when the answer is already in the last
 few messages.
@@ -215,6 +216,10 @@ under `compactMinReductionRatio`, the built-in summary runs instead.
 - The gateway in front of Jev blocks a few commands by content (`/etc/hosts`,
   some SQL); they are asked. To do: ask TypeSafe about it.
 - Whether an ask was approved or rejected is not logged yet.
+- The done-check skips turns that changed no files, but a turn that did still
+  gets judged on the whole working-tree diff, older uncommitted changes
+  included. To do: snapshot `git diff` when the turn starts and judge only
+  what the turn added.
 - The compaction ranking sends a 300-character head per candidate; the heads are
   90% of the request. To do: a shorter ranking head (150 characters) would halve
   the call.

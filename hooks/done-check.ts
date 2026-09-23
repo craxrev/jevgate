@@ -7,8 +7,8 @@ import { readStdinJson, emit } from '../src/stdin.ts';
 import { fromEnv, defaultLogPath } from '../src/config.ts';
 import { ask, nodeFetch } from '../src/jev.ts';
 import { appendLog } from '../src/log.ts';
-import { readTranscript, latestUserPrompt, firstUserPrompt } from '../src/transcript.ts';
-import { QUESTIONS, decide, blockOutput, nextCounter, type Counter, type DoneState } from '../src/done-policy.ts';
+import { readTranscript, latestUserPrompt, firstUserPrompt, turnToolUses } from '../src/transcript.ts';
+import { QUESTIONS, decide, blockOutput, nextCounter, turnChangedFiles, type Counter, type DoneState } from '../src/done-policy.ts';
 
 type Input = {
   session_id?: string;
@@ -127,6 +127,18 @@ async function main(): Promise<void> {
     appendLog(logPath, { feature: 'done', action: 'cap-reached', session, blocks: counter.blocks });
     writeCounter(session, { blocks: 0 });
     emit({ systemMessage: `jevgate: done-check blocked ${counter.blocks}x, letting through.` });
+    return;
+  }
+
+  let transcript = '';
+  try {
+    transcript = input.transcript_path ? readFileSync(input.transcript_path, 'utf8') : '';
+  } catch {
+    // no transcript: judge as before
+  }
+  if (transcript && !turnChangedFiles(turnToolUses(transcript, input.prompt_id))) {
+    appendLog(logPath, { feature: 'done', action: 'skip-no-change', session });
+    writeCounter(session, counter);
     return;
   }
 

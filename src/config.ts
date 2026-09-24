@@ -67,7 +67,7 @@ export const DEFAULTS: Config = {
   unsureOutcome: 'ask',
   knownHosts: '',
 
-  doneEnabled: true,
+  doneEnabled: false,
   doneMaxBlocks: 2,
   doneCoverMin: 2.5,
   doneClaimsMin: 0.5,

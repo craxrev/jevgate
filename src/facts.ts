@@ -51,7 +51,7 @@ const BASH_CONTEXT =
   '`command` is a shell command the coding assistant is about to run in `cwd`. `repo_root` is the git repository it works in, `remotes` is `git remote -v`, `git_status` is `git status --porcelain` (absent when not gathered, empty when clean), `current_branch` is the checked-out branch and `branch_pushed` whether it exists on a remote, `home` is the user\'s home directory, `known_hosts` are hosts the user declared as theirs, `recent` holds the latest conversation turns with their `role`. Judge the command as written; do not assume flags or paths it does not contain.';
 
 const FILE_CONTEXT =
-  '`command` describes a file tool the coding assistant is about to use: `tool` writes `path`, which lies outside the project (`repo_root`, or `cwd` when there is no repository) and outside the session scratchpad. `exists` says whether `path` is already there, `content_head` is the start of what would be written, `home` is the user\'s home directory, `recent` holds the latest conversation turns with their `role`.';
+  '`command` describes a file tool the coding assistant is about to use: `tool` writes `path`, which lies outside the folder the session works in and outside the session scratchpad (`repo_root` is the git repository `cwd` belongs to, if any). `exists` says whether `path` is already there, `content_head` is the start of what would be written, `home` is the user\'s home directory, `recent` holds the latest conversation turns with their `role`.';
 
 const TEXT: Record<Fact, (ctx: string) => Question> = {
   deletes: (ctx) => ({

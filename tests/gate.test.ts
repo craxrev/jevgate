@@ -30,6 +30,7 @@ function host(over: Partial<GateHost> = {}): GateHost & { sent: unknown[] } {
     rulesFile: async () => undefined,
     turns: async () => [{ role: 'user', text: 'clean up the build dir' }],
     cwd: '/repo',
+    roots: ['/repo'],
     home: '/Users/me',
     timed: (p) => p,
   };
@@ -103,4 +104,20 @@ test('file guard: a write outside the project is judged, with whether the file e
   assert.equal(state.exists, true);
   assert.equal(state.path, '/etc/hosts');
   assert.equal(state.content_head, '127.0.0.1 x');
+});
+
+test('a read-only command outside the session folder is judged, as Claude Code would send it to its classifier', async () => {
+  const h = host();
+  assert.equal((await judgeBash('cat /tmp/x.txt', ids, h)).lines[0]!.kind, 'allow');
+  assert.equal(h.sent.length, 1);
+  assert.equal((await judgeBash('cat src/a.ts', ids, h)).lines[0]!.kind, 'free');
+  assert.equal(h.sent.length, 1);
+});
+
+test('file guard: a write to the repo root from a subfolder session is judged', async () => {
+  const h = host({ cwd: '/repo/sub', roots: ['/repo/sub'] });
+  assert.equal((await judgeFile('Write', { file_path: '../root.txt', content: 'x' }, ids, h)).lines[0]!.kind, 'allow');
+  assert.equal(h.sent.length, 1);
+  const own = await judgeFile('Write', { file_path: '/private/tmp/claude-501/-repo-sub/s/scratchpad/n.txt', content: 'x' }, ids, h);
+  assert.equal(own.lines[0]!.kind, 'free');
 });

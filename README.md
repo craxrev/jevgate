@@ -122,7 +122,7 @@ Set in `/plugin configure jevgate`. Every feature has its own switch.
 | `noneMin` | 0.6 | probability of "nothing happened" needed to clear a fact |
 | `requestedMin` | 0.6 | probability at which a command counts as asked for |
 | `unrequestedMax` | 0.25 | probability at or below which it counts as not asked for |
-| `doneEnabled` | on | done-check |
+| `doneEnabled` | off | done-check |
 | `doneCoverMin` | 2.5 | coverage rung to pass, 0 none … 3 all |
 | `doneMaxBlocks` | 2 | follow-ups per request |
 | `agentEnabled` | on | subagent gate |
@@ -163,8 +163,12 @@ Logs live in `~/.claude/plugins/data/jevgate*/`, owner-only:
    checked against a local copy of Claude Code's own read-only rules: `git
    status`, `ls`, `grep`, `cat`, `sed -n`, `find` without `-delete`/`-exec`, and
    so on; no expansions, subshells, background jobs, or redirects other than
-   `2>&1` and `>/dev/null`. Credential paths are excluded so Jev sees them. About
-   a quarter of real commands are free.
+   `2>&1` and `>/dev/null`. Credential paths are excluded so Jev sees them.
+   And, as Claude Code does, every path must be under the folder the session
+   started in (a shell `cd` does not move it), its own scratchpad, or a
+   directory in `permissions.additionalDirectories`: `cat /tmp/x`, `ls ~` and
+   `ls ../` are judged, since Claude Code would send them to its classifier.
+   About a quarter of real commands are free.
 2. **Context.** Gathered without any model: the command as written, `cwd`, the
    repo root, `git remote -v`, `git status --porcelain` when the command touches
    git or files, and the last 8 turns of the conversation with roles. Only your
@@ -196,7 +200,7 @@ judged call takes 0.3–1 s and about 3.3k input tokens.
 
 | Call | Decided by | Outcome |
 | --- | --- | --- |
-| write inside the repo (or `cwd` without one), a scratchpad or `~/.claude/jobs/*/tmp` | local | free |
+| write under the folder the session started in, its own scratchpad, or an added directory | local | free |
 | write outside | one Jev call | `deletes`, `changes_system`, `requested` with the Bash rules |
 | read of a credential path | local | denied |
 | any other read | local | silent |
@@ -250,9 +254,11 @@ says why.
 - The dim line appears when a call finishes, not while it runs, and not on rows
   folded into a group.
 - Text-heavy sessions compact by 30–50%, not the 80–90% a summary gives.
-- A read-only command jevgate lets through without a word still goes to the
-  auto-mode classifier when Claude Code's own rules do not call it read-only
-  (a longer `ls` or `cat` chain). To decide: answer those with allow too.
+- The free set copies Claude Code's rules, so a call it lets through should
+  never reach the auto-mode classifier. Any that does is logged as `slipped`
+  (Claude Code marks such a call `classifierBoundary` in the transcript), kept
+  out of the pane; `node scripts/stats.ts` lists them. A directory added with
+  `--add-dir` or `/add-dir` is not known to jevgate, so paths there are judged.
 - Function hooks are early access and change between releases; the types in
   `types/` are regenerated per release with `/plugin-types types`.
 - The done-check's follow-up shows as a prompt from jevgate in the transcript;

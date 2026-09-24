@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { verdictText, matchFragment, type VerdictLine } from '../src/verdict.ts';
@@ -77,4 +77,29 @@ test('warn.sh speaks only when function hooks are off', () => {
   assert.equal(run('true'), '');
   assert.match(JSON.parse(run(undefined)).systemMessage, /function hooks are off/);
   assert.match(JSON.parse(run('0')).systemMessage, /nothing is guarded/);
+});
+
+const SLIPS = new URL('../hooks/slips.sh', import.meta.url).pathname;
+
+test('a free call is noted for the slip check, with its transcript and tool', () => {
+  const data = mkdtempSync(join(tmpdir(), 'jevgate-note-'));
+  mkdirSync(join(data, 'verdicts'));
+  writeFileSync(join(data, 'verdicts', 'toolu_F'), verdictText([{ mode: '*', kind: 'free', reason: '' }]));
+  const input = JSON.stringify({ session_id: 'sess-1', transcript_path: '/t/s.jsonl', permission_mode: 'auto', tool_name: 'Bash', tool_input: { command: 'ls' }, tool_use_id: 'toolu_F' });
+  spawnSync('sh', [SCRIPT], { input, encoding: 'utf8', env: { ...process.env, CLAUDE_PLUGIN_DATA: data } });
+  assert.equal(readFileSync(join(data, 'pending', 'sess-1'), 'utf8'), 'toolu_F\t/t/s.jsonl\tBash\t0\n');
+});
+
+test('slips.sh prints the free calls the classifier judged, keeps unwritten ones a few turns', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jevgate-slips-'));
+  const t = join(dir, 's.jsonl');
+  const result = (id: string, boundary: boolean) => JSON.stringify({ type: 'user', ...(boundary ? { classifierBoundary: true } : {}), message: { content: [{ type: 'tool_result', tool_use_id: id }] }, toolUseResult: { stdout: '' } });
+  writeFileSync(t, [JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'toolu_A' }] } }), result('toolu_A', true), result('toolu_B', false)].join('\n') + '\n');
+  const pending = join(dir, 'pending');
+  writeFileSync(pending, `toolu_A\t${t}\tBash\t0\ntoolu_B\t${t}\tWrite\t0\ntoolu_C\t${t}\tBash\t3\ntoolu_D\t${t}\tBash\t4\n`);
+  const r = spawnSync('sh', [SLIPS, pending], { encoding: 'utf8' });
+  assert.equal(r.stdout, 'toolu_A\tBash\n');
+  // C waits another turn, D gave up after five
+  assert.equal(readFileSync(pending, 'utf8'), `toolu_C\t${t}\tBash\t4\n`);
+  assert.equal(spawnSync('sh', [SLIPS, join(dir, 'none')], { encoding: 'utf8' }).stdout, '');
 });

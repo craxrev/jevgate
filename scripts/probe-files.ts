@@ -7,7 +7,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { ask } from '../src/jev.ts';
 import { nodeFetch } from '../src/node-fetch.ts';
 import { FILE_FACTS, FILE_QUESTIONS, resolveFacts, decideFacts, type Outcome } from '../src/facts.ts';
-import { insideProject, contentHead, type FileInput, type FileState } from '../src/file-policy.ts';
+import { contentHead, type FileInput, type FileState } from '../src/file-policy.ts';
+import { inScope } from '../src/scope.ts';
 import { turnsOf, type Row } from '../src/transcript.ts';
 
 /** A transcript line's main-thread text as a session row, or nothing. */
@@ -90,7 +91,7 @@ function realCases(): { c: Case; cwd: string }[] {
             if (b.type !== 'tool_use' || typeof p !== 'string') continue;
             const known = seen.has(p);
             seen.add(p);
-            if (!['Write', 'Edit', 'MultiEdit'].includes(b.name ?? '') || !cwd || insideProject(p, cwd, cwd)) continue;
+            if (!['Write', 'Edit', 'MultiEdit'].includes(b.name ?? '') || !cwd || inScope(p, { cwd, roots: [cwd] })) continue;
             const c: Case = { tool: b.name!, path: p, exists: b.name !== 'Write' || known, content: contentHead(b.input) ?? '', recent: turns.slice(-8), want: 'allow' };
             out.push({ c, cwd });
           }

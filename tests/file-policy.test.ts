@@ -4,7 +4,6 @@ import {
   toolPath,
   contentHead,
   resolvePath,
-  insideProject,
   isSensitivePath,
   WRITE_TOOLS,
 } from '../src/file-policy.ts';
@@ -33,20 +32,6 @@ test('resolvePath expands ~ and resolves relative paths against cwd', () => {
   assert.equal(resolvePath('../other/x', REPO, HOME), '/Users/me/dev/other/x');
   assert.equal(resolvePath('/etc/hosts', REPO, HOME), '/etc/hosts');
   assert.equal(resolvePath(`${REPO}/./src/../a.ts`, REPO, HOME), `${REPO}/a.ts`);
-});
-
-test('insideProject: repo root, cwd fallback, scratchpad', () => {
-  assert.equal(insideProject(`${REPO}/src/a.ts`, REPO, `${REPO}/src`), true);
-  assert.equal(insideProject(REPO, REPO, REPO), true);
-  assert.equal(insideProject('/Users/me/dev/repo-other/a.ts', REPO, REPO), false);
-  assert.equal(insideProject('/Users/me/.zshrc', REPO, REPO), false);
-  assert.equal(insideProject('/Users/me/notes/a.md', undefined, '/Users/me/notes'), true);
-  assert.equal(insideProject('/Users/me/other/a.md', undefined, '/Users/me/notes'), false);
-  assert.equal(insideProject('/private/tmp/claude-501/-Users-me-dev-repo/abc/scratchpad/x.txt', REPO, REPO), true);
-  assert.equal(insideProject('/tmp/claude/x.txt', REPO, REPO), true);
-  assert.equal(insideProject('/tmp/x.txt', REPO, REPO), false);
-  assert.equal(insideProject('/Users/me/.claude/jobs/8cfd7ea1/tmp/t.sh', REPO, REPO), true);
-  assert.equal(insideProject('/Users/me/.claude/jobs/8cfd7ea1/state.json', REPO, REPO), false);
 });
 
 test('isSensitivePath matches credential files, not ordinary ones', () => {

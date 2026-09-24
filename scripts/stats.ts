@@ -21,3 +21,14 @@ const i = process.argv.indexOf('--session');
 const session = i === -1 ? latestSession(entries) : process.argv[i + 1];
 console.log(formatStats(bashStats(entries, session), bashStats(entries), session));
 console.log(`log: ${dir}/stats.jsonl + ui.jsonl (${entries.length} entries)`);
+
+// free calls Claude Code's classifier judged anyway: gaps between the free set and Claude Code's own
+const slipped = entries.filter((e) => e.action === 'slipped');
+if (slipped.length) {
+  const full = new Map(read(`${dir}/decisions-v2.jsonl`).map((e) => [e.tool_use_id, e]));
+  console.log(`\nslipped to the classifier: ${slipped.length}`);
+  for (const e of slipped.slice(-20)) {
+    const f = full.get(e.tool_use_id);
+    console.log(`  ${e.ts.slice(0, 16)}  ${f?.command ?? f?.path ?? `(${e.tool_use_id}; the command is in the full log when it is on)`}`);
+  }
+}

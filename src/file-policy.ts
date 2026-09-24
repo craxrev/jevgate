@@ -40,20 +40,6 @@ export function resolvePath(p: string, cwd: string | undefined, home: string | u
   return resolve(out);
 }
 
-// session scratchpads, and the per-job temp dirs Claude Code keeps under ~/.claude/jobs
-const SCRATCHPAD = /^\/(private\/)?tmp\/claude(-\d+)?\/|\/\.claude\/jobs\/[^/]+\/tmp\//;
-
-function under(path: string, root: string | undefined): boolean {
-  if (!root) return false;
-  const r = root.endsWith('/') ? root : root + '/';
-  return path === root || path.startsWith(r);
-}
-
-/** Inside the repository (or `cwd` when there is none) or a session scratchpad. */
-export function insideProject(absPath: string, repoRoot: string | undefined, cwd: string | undefined): boolean {
-  return under(absPath, repoRoot ?? cwd) || SCRATCHPAD.test(absPath);
-}
-
 export function isSensitivePath(absPath: string): boolean {
   return SENSITIVE_PATH.test(absPath);
 }

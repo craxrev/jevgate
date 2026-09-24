@@ -220,9 +220,25 @@ async function gateHost($: Host, st: GuardState): Promise<GateHost> {
     },
     turns: async () => turnsOf((await $.session.messages()) as Row[]),
     cwd: await $.session.cwd(),
+    roots: await scopeRoots($),
     home: (await $.env.get('HOME')) ?? undefined,
     timed: (p, ms) => timed($, p, ms),
   };
+}
+
+/** Where the session started (a shell `cd` does not move it) and the settings' added directories: see scope.ts. */
+async function scopeRoots($: Host): Promise<string[]> {
+  const roots = [await $.session.root()];
+  try {
+    const home = (await $.env.get('HOME')) ?? '';
+    const dirs = ((await $.settings.read())['permissions'] as { additionalDirectories?: unknown } | undefined)?.additionalDirectories;
+    for (const d of Array.isArray(dirs) ? dirs : []) {
+      if (typeof d === 'string' && d) roots.push(d.startsWith('~/') ? home + d.slice(1) : d);
+    }
+  } catch {
+    // no added directories: their paths are judged instead
+  }
+  return roots;
 }
 
 /**
@@ -261,6 +277,21 @@ async function agentGate($: Host, st: GuardState, input: { prompt?: string; suba
   } catch (err) {
     await appendDecision($, { feature: 'agent', action: 'error', error: String(err) });
     return undefined;
+  }
+}
+
+/**
+ * Logs the calls jevgate let through as free that Claude Code's classifier judged
+ * anyway (hooks/slips.sh finds them in the transcript): the free set is meant to
+ * match Claude Code's own, so each one is a gap to close. Kept out of the UI.
+ */
+async function logSlips($: Host): Promise<void> {
+  const session = await $.session.id();
+  if (!/^[A-Za-z0-9_-]+$/.test(session)) return;
+  const r = await $.process.run(['sh', `${$.plugin.root}/hooks/slips.sh`, `${await ownDataDir($)}/pending/${session}`], { timeoutMs: 10000 });
+  for (const line of r.stdout.split('\n').filter(Boolean)) {
+    const [id, tool] = line.split('\t');
+    await appendDecision($, { feature: tool === 'Bash' ? 'bash' : 'file', action: 'slipped', session, tool_use_id: id });
   }
 }
 
@@ -606,6 +637,14 @@ export const register: Register = (on: On, options: PluginOptions) => {
       ticker?.cancel();
       ticker = undefined;
     }
+    // on a timer: the transcript holds this turn's results once the turn has ended
+    $.clock.after(1, async () => {
+      try {
+        await logSlips($);
+      } catch (err) {
+        $.ui.log(`jevgate: slips not checked (${err instanceof Error ? err.message : String(err)})`);
+      }
+    });
     // the main agent's answer only; a follow-up means the model goes on, so no reminder now
     if (!e.agentId && e.reason === 'answer' && (await doneStep($, guard, e.answer))) {
       await refresh($, ui);

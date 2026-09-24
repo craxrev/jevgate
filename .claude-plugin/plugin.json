@@ -88,7 +88,7 @@
       "type": "boolean",
       "title": "Done-check",
       "description": "When Claude says it is done and the diff does not cover the request or the final message overclaims, send a follow-up prompt so Claude goes on.",
-      "default": true
+      "default": false
     },
     "doneCoverMin": {
       "type": "number",

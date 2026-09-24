@@ -12,6 +12,16 @@ mode=$(field permission_mode)
 case $mode in ''|bypassPermissions|dontAsk) closed=1;; *) closed=;; esac
 answer() { printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"%s","permissionDecisionReason":%s}}' "$1" "$2"; }
 refuse() { [ -n "$closed" ] && answer deny "$1"; exit 0; }
+# a free call is left to Claude Code, whose classifier should not see it: noted for
+# hooks/slips.sh, which the module runs at the turn's end to log any that it did
+noteFree() {
+  s=$(field session_id) t=$(field transcript_path) tool=$(field tool_name)
+  case $s in ''|*[!A-Za-z0-9_-]*) return;; esac
+  [ -n "$t" ] || return
+  p="${CLAUDE_PLUGIN_DATA:-$HOME/.claude/jevgate}/pending"
+  [ -d "$p" ] || mkdir -p "$p"
+  printf '%s\t%s\t%s\t0\n' "$id" "$t" "$tool" >> "$p/$s"
+}
 case $id in ''|*[!A-Za-z0-9_-]*) refuse '"jevgate: no tool_use_id to find a verdict by, refusing to run unguarded."';; esac
 f="${CLAUDE_PLUGIN_DATA:-$HOME/.claude/jevgate}/verdicts/$id"
 [ -f "$f" ] || refuse '"jevgate: the jevgate module did not judge this call (are function hooks on?), refusing to run unguarded."'
@@ -29,5 +39,6 @@ case $kind in
   allow|ask|deny) answer "$kind" "$reason";;
   unreachable|nokey) [ -n "$closed" ] && answer deny "$reason";;
   blocked) [ -n "$closed" ] && answer ask "$reason";;
+  free) noteFree;;
 esac
 exit 0

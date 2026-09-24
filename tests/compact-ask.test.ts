@@ -27,6 +27,8 @@ type Extra = {
   /** A program's result for `$.process.run` (appends are handled apart). */
   run?: (argv: string[]) => { exitCode: number; stdout: string } | undefined;
   rows?: unknown[];
+  /** Plugin options on top of the harness's own. */
+  options?: Record<string, unknown>;
 };
 
 function harness(answers: (string | undefined)[], percent: { value: number }, extra: Extra = {}) {
@@ -52,6 +54,7 @@ function harness(answers: (string | undefined)[], percent: { value: number }, ex
       compact: async () => pick('session.compact')($, { trigger: 'plugin', messages: [] }, () => { nexts.push('plugin'); return { messages: [] }; }),
       messages: async () => extra.rows ?? [],
       cwd: async () => '/repo',
+      root: async () => '/repo',
     },
     ui: {
       ask: async (q: string) => {
@@ -90,7 +93,7 @@ function harness(answers: (string | undefined)[], percent: { value: number }, ex
     },
     prompt: { submit: async (p: { text: string }) => void submitted.push(p.text) },
   };
-  register(on as never, { compactUseJev: extra.useJev ?? false } as never);
+  register(on as never, { compactUseJev: extra.useJev ?? false, ...extra.options } as never);
   const compact = (trigger: string, instructions?: string) => pick('session.compact')($, { trigger, messages: [], instructions }, () => { nexts.push(trigger); return { messages: [] }; });
   const turn = (agentId?: string, answer = '') => pick('turn.complete')($, { agentId, reason: 'answer', answer }, () => undefined);
   const start = (text: string) => pick('turn.start')($, { text, turnId: 't' }, () => undefined);
@@ -249,12 +252,13 @@ test('done-check: a turn that missed part of the request gets follow-ups, at mos
   ];
   // a repository with one changed file
   const run = (argv: string[]) => {
+    if (argv[0] !== 'git') return undefined;
     const k = argv.slice(1).join(' ');
     if (k === 'diff HEAD --name-only --no-color') return { exitCode: 0, stdout: 'src/slug.ts\n' };
     if (k.startsWith('diff HEAD --no-color')) return { exitCode: 0, stdout: '+export const slugify = 1;\n' };
     return { exitCode: 0, stdout: 'x\n' };
   };
-  const h = harness([], { value: 30 }, { fetch: jevFake({ coverage: 1.9 }), rows, run });
+  const h = harness([], { value: 30 }, { fetch: jevFake({ coverage: 1.9 }), rows, run, options: { doneEnabled: true } });
   await h.start('Add slugify and a test for it.');
   await h.turn(undefined, 'Added slugify.');
   await h.runTimers();
@@ -271,4 +275,22 @@ test('done-check: a turn that missed part of the request gets follow-ups, at mos
   assert.equal(h.submitted.length, 2, 'past doneMaxBlocks the turn may end');
   const actions = h.files.get(`${DATA}/stats.jsonl`)!.trim().split('\n').map((l) => JSON.parse(l).action);
   assert.deepEqual(actions, ['block', 'block', 'cap-reached']);
+});
+
+test('the done-check is off unless switched on', async () => {
+  const h = harness([], { value: 30 }, { fetch: jevFake({ coverage: 0 }), rows: [{ role: 'user', text: 'x' }, { role: 'assistant', text: 'y', toolUses: [{ tool: 'Write', input: { file_path: 'a' } }] }] });
+  await h.start('x');
+  await h.turn(undefined, 'done');
+  await h.runTimers();
+  assert.equal(h.submitted.length, 0);
+  assert.equal(h.files.has(`${DATA}/stats.jsonl`), false);
+});
+
+test("a turn's end logs the free calls slips.sh found judged by the classifier", async () => {
+  const run = (argv: string[]) => (String(argv[1]).endsWith('/hooks/slips.sh') && argv[2] === `${DATA}/pending/s` ? { exitCode: 0, stdout: 'toolu_Z\tBash\ntoolu_W\tWrite\n' } : undefined);
+  const h = harness([], { value: 30 }, { run });
+  await h.turn();
+  await h.runTimers();
+  const logged = h.files.get(`${DATA}/stats.jsonl`)!.trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(logged.map((l) => [l.feature, l.action, l.tool_use_id]), [['bash', 'slipped', 'toolu_Z'], ['file', 'slipped', 'toolu_W']]);
 });

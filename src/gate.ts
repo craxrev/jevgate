@@ -7,7 +7,8 @@ import { gatherState, type Runner } from './bash-context.ts';
 import { recentTurns, type Turn } from './transcript.ts';
 import { BLOCKED_REASON, UNREACHABLE_REASON } from './bash-policy.ts';
 import { BASH_FACTS, BASH_QUESTIONS, FILE_FACTS, FILE_QUESTIONS, DEFAULT_RULES, decideFacts, mergeRules, rawScores, resolveFacts, type Fact, type Facts } from './facts.ts';
-import { WRITE_TOOLS, contentHead, insideProject, isSensitivePath, resolvePath, toolPath, SECRET_READ_REASON, type FileInput, type FileState } from './file-policy.ts';
+import { WRITE_TOOLS, contentHead, isSensitivePath, resolvePath, toolPath, SECRET_READ_REASON, type FileInput, type FileState } from './file-policy.ts';
+import { inScope, outsidePath, type Scope } from './scope.ts';
 import { knownHosts, thresholds, type Config } from './config.ts';
 import type { Decision } from './log.ts';
 import type { VerdictLine } from './verdict.ts';
@@ -22,7 +23,10 @@ export type GateHost = {
   /** The rules file's JSON, or undefined when none is set or it cannot be read. */
   rulesFile: () => Promise<unknown>;
   turns: () => Promise<Turn[]>;
+  /** The shell's folder now. */
   cwd: string;
+  /** Where the session started, and the added directories: see scope.ts. */
+  roots: readonly string[];
   home?: string;
   /** `p`, or a rejection once `ms` passed. */
   timed: <T>(p: Promise<T>, ms: number) => Promise<T>;
@@ -36,6 +40,8 @@ const NO_KEY_REASON = 'jevgate: no TYPESAFE_API_KEY, refusing to run unguarded. 
 const only = (kind: VerdictLine['kind'], reason = ''): VerdictLine[] => [{ mode: '*', kind, reason }];
 
 type Ids = { session?: string; tool_use_id: string };
+
+const scopeOf = (host: GateHost, ids: Ids): Scope => ({ cwd: host.cwd, roots: host.roots, session: ids.session, home: host.home });
 
 /** Facts to verdict lines: `*` from the rules file's base rules, one more line for each mode it overrides. */
 function decided(facts: Facts, rulesFile: unknown, cfg: Config) {
@@ -80,7 +86,8 @@ export async function judgeBash(command: string, ids: Ids, host: GateHost): Prom
   if (!cfg.bashEnabled || !command.trim()) return { lines: only('free') };
   const entry: Decision = { feature: 'bash', session: ids.session, tool_use_id: ids.tool_use_id, command, action: '' };
   const free = checkFree(command);
-  if (free.free) return { lines: only('free'), log: { ...entry, action: 'free' } };
+  // read-only, and where Claude Code lets it through too: else its classifier would judge it
+  if (free.free && outsidePath(free.parsed, scopeOf(host, ids)) === undefined) return { lines: only('free'), log: { ...entry, action: 'free' } };
   if (!host.apiKey) return { lines: only('nokey', NO_KEY_REASON), log: { ...entry, action: 'denied', reason: 'no api key' } };
   const t0 = Date.now();
   const state = await gatherState(
@@ -102,7 +109,7 @@ export async function judgeFile(tool: string, input: FileInput, ids: Ids, host: 
     return { lines: only('free') };
   }
   const repoRoot = (await host.run('git', ['rev-parse', '--show-toplevel'], host.cwd))?.trim() || undefined;
-  if (insideProject(path, repoRoot, host.cwd)) return { lines: only('free'), log: { ...entry, action: 'free' } };
+  if (inScope(path, scopeOf(host, ids))) return { lines: only('free'), log: { ...entry, action: 'free' } };
   if (!host.apiKey) return { lines: only('nokey', 'jevgate: no TYPESAFE_API_KEY, refusing to write outside the project unguarded.'), log: { ...entry, action: 'denied', reason: 'no api key' } };
   const t0 = Date.now();
   const [exists, turns] = await Promise.all([host.exists(path), host.turns()]);

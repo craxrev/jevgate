@@ -30,9 +30,9 @@ const fakeGit =
     return undefined;
   };
 
-test('state carries the command as written, repo root and remotes', () => {
+test('state carries the command as written, repo root and remotes', async () => {
   const command = 'cd x && npm test 2>&1 | tail -5';
-  const s = gatherState({ command, parsed: parseShell(command), cwd: '/repo/src', recentTurns: 5 }, fakeGit());
+  const s = await gatherState({ command, parsed: parseShell(command), cwd: '/repo/src', recentTurns: 5 }, fakeGit());
   assert.equal(s.command, command);
   assert.equal(s.cwd, '/repo/src');
   assert.equal(s.repo_root, '/repo');
@@ -41,28 +41,28 @@ test('state carries the command as written, repo root and remotes', () => {
   assert.equal(s.recent, undefined);
   assert.equal(s.current_branch, 'feat/x');
   assert.equal(s.branch_pushed, true);
-  const unpushed = gatherState({ command, parsed: parseShell(command), cwd: '/repo', recentTurns: 0, home: '/Users/me', knownHosts: ['box'] }, fakeGit({ 'rev-parse --abbrev-ref --symbolic-full-name @{u}': undefined }));
+  const unpushed = await gatherState({ command, parsed: parseShell(command), cwd: '/repo', recentTurns: 0, home: '/Users/me', knownHosts: ['box'] }, fakeGit({ 'rev-parse --abbrev-ref --symbolic-full-name @{u}': undefined }));
   assert.equal(unpushed.branch_pushed, false);
   assert.equal(unpushed.home, '/Users/me');
   assert.deepEqual(unpushed.known_hosts, ['box']);
 });
 
-test('git status is gathered only for git, file writes, redirects and scripts', () => {
+test('git status is gathered only for git, file writes, redirects and scripts', async () => {
   for (const c of ['git checkout -- .', 'rm -rf build', 'echo x > f', "python3 - <<'EOF'\nx\nEOF"]) {
-    const s = gatherState({ command: c, parsed: parseShell(c), cwd: '/repo', recentTurns: 0 }, fakeGit());
+    const s = await gatherState({ command: c, parsed: parseShell(c), cwd: '/repo', recentTurns: 0 }, fakeGit());
     assert.equal(s.git_status, ' M src/a.ts\n?? new.txt', c);
   }
-  const clean = gatherState({ command: 'rm -rf build', parsed: parseShell('rm -rf build'), cwd: '/repo', recentTurns: 0 }, fakeGit({ 'status --porcelain': '' }));
+  const clean = await gatherState({ command: 'rm -rf build', parsed: parseShell('rm -rf build'), cwd: '/repo', recentTurns: 0 }, fakeGit({ 'status --porcelain': '' }));
   assert.equal(clean.git_status, '');
 });
 
-test('outside a repository only command and cwd are set', () => {
+test('outside a repository only command and cwd are set', async () => {
   const run: Runner = () => undefined;
-  const s = gatherState({ command: 'rm -rf ~/x', parsed: parseShell('rm -rf ~/x'), cwd: '/Users/me', recentTurns: 0 }, run);
+  const s = await gatherState({ command: 'rm -rf ~/x', parsed: parseShell('rm -rf ~/x'), cwd: '/Users/me', recentTurns: 0 }, run);
   assert.deepEqual(s, { command: 'rm -rf ~/x', cwd: '/Users/me' });
 });
 
-test('recent turns: last n of both roles, oldest first, reminders skipped, long ones truncated', () => {
+test('recent turns: last n of both roles, oldest first, reminders skipped, long ones truncated', async () => {
   const p = transcript(
     line('user', 'first ask'),
     line('assistant', 'Done. Commit it?'),
@@ -79,6 +79,21 @@ test('recent turns: last n of both roles, oldest first, reminders skipped, long 
   );
   assert.equal(recentTurns(p, 0), undefined);
   assert.equal(recentTurns('/nonexistent', 5), undefined);
-  const s = gatherState({ command: 'ls', parsed: parseShell('ls'), transcriptPath: p, recentTurns: 1 }, () => undefined);
+  const s = await gatherState({ command: 'ls', parsed: parseShell('ls'), transcriptPath: p, recentTurns: 1 }, () => undefined);
   assert.deepEqual(s.recent, [{ role: 'user', text: 'third ask' }]);
+});
+
+test('the git calls run at once, not one after another', async () => {
+  const slow: Runner = (program, args, cwd) => new Promise((r) => setTimeout(() => r(fakeGit()(program, args, cwd) as string | undefined), 40));
+  const t = performance.now();
+  const s = await gatherState({ command: 'rm -rf build', parsed: parseShell('rm -rf build'), cwd: '/repo', recentTurns: 0 }, slow);
+  assert.ok(performance.now() - t < 120, 'five 40ms calls took longer than two of them');
+  assert.equal(s.repo_root, '/repo');
+  assert.equal(s.branch_pushed, true);
+  assert.equal(s.git_status, ' M src/a.ts\n?? new.txt');
+});
+
+test('outside a repository the failed git calls leave nothing behind', async () => {
+  const s = await gatherState({ command: 'rm -rf build', parsed: parseShell('rm -rf build'), cwd: '/tmp', recentTurns: 0 }, (_p, args) => (args[0] === 'remote' ? 'stray\n' : undefined));
+  assert.deepEqual(Object.keys(s).sort(), ['command', 'cwd']);
 });

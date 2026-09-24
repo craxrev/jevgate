@@ -5,7 +5,7 @@ import { fromEnv } from '../src/config.ts';
 import { ask } from '../src/jev.ts';
 import { nodeFetch, newTrace, traceFields } from '../src/node-fetch.ts';
 import { logger } from '../src/log.ts';
-import { readTranscript, recentTurns } from '../src/transcript.ts';
+import { readTranscriptTail, recentTurns } from '../src/transcript.ts';
 import { buildState, QUESTIONS, decide, denyOutput } from '../src/agent-policy.ts';
 
 type Input = {
@@ -23,7 +23,7 @@ async function main(): Promise<void> {
   const prompt = input.tool_input?.prompt;
   if (typeof prompt !== 'string' || !prompt.trim()) return;
 
-  const recent = recentTurns(readTranscript(input.transcript_path), cfg.agentRecentTurns);
+  const recent = recentTurns(readTranscriptTail(input.transcript_path, cfg.agentRecentTurns), cfg.agentRecentTurns);
   if (recent.length === 0) return;
 
   const t0 = Date.now();

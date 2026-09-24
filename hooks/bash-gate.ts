@@ -54,7 +54,7 @@ async function main(): Promise<void> {
 
   const t0 = Date.now();
   const trace = newTrace();
-  const state = gatherState({
+  const state = await gatherState({
     command,
     parsed: free.parsed,
     cwd: input.cwd,

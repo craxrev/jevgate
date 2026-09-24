@@ -16,7 +16,8 @@ export type LogEntry = {
   scores?: Record<string, number>;
   facts?: Record<string, string>;
   ms?: number;
-  /** Jev call timing, see `Trace` in jev.ts. */
+  /** Jev call timing, see `Trace` in node-fetch.ts. */
+  startMs?: number;
   prepMs?: number;
   connectMs?: number;
   serverMs?: number;

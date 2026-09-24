@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTranscript, latestUserPrompt, firstUserPrompt, recentTurns, turnToolUses } from '../src/transcript.ts';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { parseTranscript, latestUserPrompt, firstUserPrompt, recentTurns, turnToolUses, readTranscript, readTranscriptTail } from '../src/transcript.ts';
 
 const lines = [
   { type: 'mode', mode: 'normal' },
@@ -61,4 +64,19 @@ test('turnToolUses: tool calls after the turn prompt, older turns and subagents 
   assert.deepEqual(turnToolUses(jsonl, 'p2').map((t) => t.name + ' ' + String(t.input.command)), ['Bash git log --oneline', 'Bash ls']);
   assert.deepEqual(turnToolUses(jsonl, 'p1').map((t) => t.name), ['Edit', 'Bash', 'Bash']);
   assert.deepEqual(turnToolUses(jsonl).map((t) => t.name), ['Bash'], 'no prompt id: after the last typed prompt');
+});
+
+test('readTranscriptTail reads only the end, growing the window until it has n turns', () => {
+  const p = join(mkdtempSync(join(tmpdir(), 'jevgate-tail-')), 't.jsonl');
+  const turn = (i: number) => JSON.stringify({ type: i % 2 ? 'assistant' : 'user', message: { role: i % 2 ? 'assistant' : 'user', content: `turn ${i} é ` + 'x'.repeat(300) } });
+  const big = JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: 'y'.repeat(5000) }] } });
+  writeFileSync(p, [...Array.from({ length: 40 }, (_, i) => turn(i)), big, turn(40), turn(41)].join('\n') + '\n');
+  const all = readTranscript(p);
+  // a 100-byte window starts mid-line and inside the 5 kB result; it doubles until 8 turns fit
+  const tail = readTranscriptTail(p, 8, 100);
+  assert.ok(tail.length >= 8 && tail.length < all.length);
+  assert.deepEqual(tail.slice(-8), all.slice(-8));
+  assert.deepEqual(readTranscriptTail(p, 500, 100), all);
+  assert.deepEqual(readTranscriptTail('/nonexistent', 8), []);
+  assert.deepEqual(readTranscriptTail(p, 0), []);
 });

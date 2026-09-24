@@ -8,10 +8,13 @@ export type Trace = { startedAt?: number; connectMs: number; serverMs?: number; 
 
 export const newTrace = (): Trace => ({ connectMs: 0, tries: 0 });
 
-/** Log fields for a trace; `t0` is when the hook started building the request. Empty if no request went out. */
-export function traceFields(trace: Trace, t0: number): { prepMs?: number; connectMs?: number; serverMs?: number } {
+/**
+ * Log fields for a trace; `t0` is when the hook started building the request. Empty if no request went out.
+ * `startMs`: from node's start to `t0` (boot and module load), which `ms` leaves out.
+ */
+export function traceFields(trace: Trace, t0: number): { startMs?: number; prepMs?: number; connectMs?: number; serverMs?: number } {
   if (trace.startedAt === undefined) return {};
-  return { prepMs: trace.startedAt - t0, connectMs: trace.connectMs, ...(trace.serverMs !== undefined ? { serverMs: trace.serverMs } : {}) };
+  return { startMs: Math.round(t0 - performance.timeOrigin), prepMs: trace.startedAt - t0, connectMs: trace.connectMs, ...(trace.serverMs !== undefined ? { serverMs: trace.serverMs } : {}) };
 }
 
 /** Node fetch with a hard timeout; the hook must never hang Claude Code. */

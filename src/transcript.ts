@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readFileSync, readSync } from 'node:fs';
 
 export type Turn = { role: 'user' | 'assistant'; text: string; promptId?: string };
 
@@ -47,6 +47,36 @@ export function readTranscript(path: string | undefined): Turn[] {
     return parseTranscript(readFileSync(path, 'utf8'));
   } catch {
     return [];
+  }
+}
+
+const TAIL_START_BYTES = 256 * 1024;
+
+/**
+ * At least the last `n` turns (all of them if the transcript has fewer), reading
+ * only the file's end: a window from the end that doubles until it holds `n`
+ * turns. A long session's transcript runs to tens of MB; its last turns are near the end.
+ */
+export function readTranscriptTail(path: string | undefined, n: number, startBytes = TAIL_START_BYTES): Turn[] {
+  if (!path || n <= 0) return [];
+  let fd: number | undefined;
+  try {
+    fd = openSync(path, 'r');
+    const size = fstatSync(fd).size;
+    for (let win = Math.max(1, startBytes); ; win *= 2) {
+      const len = Math.min(win, size);
+      const buf = Buffer.alloc(len);
+      readSync(fd, buf, 0, len, size - len);
+      let text = buf.toString('utf8');
+      // mid-file, the window's first line is a fragment (maybe a cut character too)
+      if (len < size) text = text.slice(text.indexOf('\n') + 1);
+      const turns = parseTranscript(text);
+      if (turns.length >= n || len === size) return turns;
+    }
+  } catch {
+    return [];
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
 }
 

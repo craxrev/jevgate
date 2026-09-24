@@ -211,7 +211,7 @@ The guards run inside Claude Code, in the module's `tool.call` hook, which comes
 before Claude Code's permission step. That keeps one connection to Jev open for
 the session: a judged call takes about 300ms (the first about 750ms), against
 about 1.6s for the auto-mode classifier. The verdict goes to
-`verdicts/<tool_use_id>`, and `hooks/answer.sh`, a tiny PreToolUse hook, answers
+`~/.claude/jevgate/run/verdicts/<tool_use_id>`, and `hooks/answer.sh`, a tiny PreToolUse hook, answers
 Claude Code with it, so an ask is Claude Code's own prompt and an allow skips the
 classifier. A function hook cannot answer PreToolUse itself
 ([#96831](https://github.com/anthropics/claude-code/issues/96831)).

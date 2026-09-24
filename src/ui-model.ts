@@ -78,6 +78,12 @@ export function flagsOf(e: LogEntry): string[] {
   const c = e.category ?? e.reason ?? '?';
   return c.split(', ').filter(Boolean).map((f) => (e.feature === 'file' ? 'file:' : '') + f);
 }
+/** A flag as shown, `max` chars at most: a file-tool flag keeps its ` [F]` mark when cut. */
+export function flagLabel(flag: string, max = Infinity): string {
+  if (!flag.startsWith('file:')) return flag.slice(0, max);
+  return flag.slice(5, 5 + Math.max(0, max - 4)) + ' [F]';
+}
+
 /** Guard outcomes per session. `free` is silent and not counted in the footer; unreachable counts as denied there. */
 export type Tally = { free: number; allowed: number; asked: number; denied: number; blocks: number; agentDenies: number; compactions: number };
 
@@ -239,10 +245,10 @@ export function formatStats(session: BashStats, all: BashStats, sessionId?: stri
   };
   const lines = ['jevgate guard (bash + file tools)', row(`session${sessionId ? '' : '*'}`, session), row('all-time', all)];
   if (all.categories.length) {
-    lines.push('denied by flag (all-time): ' + all.categories.map(([c, n]) => `${c} ${n}`).join(', '));
+    lines.push('denied by flag (all-time): ' + all.categories.map(([c, n]) => `${flagLabel(c)} ${n}`).join(', '));
   }
   if (all.askedBy.length) {
-    lines.push('asked by flag (all-time): ' + all.askedBy.map(([c, n]) => `${c} ${n}`).join(', '));
+    lines.push('asked by flag (all-time): ' + all.askedBy.map(([c, n]) => `${flagLabel(c)} ${n}`).join(', '));
   }
   if (!sessionId) lines.push('* no session id in the log; session row is empty');
   return lines.join('\n');

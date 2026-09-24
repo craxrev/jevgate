@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseLog, tally, statusText, footerLabel, bashRowText, groupSummary, askAnswer, kb, bashStats, latestSession, formatStats } from '../src/ui-model.ts';
+import { flagLabel, parseLog, tally, statusText, footerLabel, bashRowText, groupSummary, askAnswer, kb, bashStats, latestSession, formatStats } from '../src/ui-model.ts';
 
 const log = [
   { ts: 't', feature: 'bash', action: 'free', session: 's1', tool_use_id: 'a', command: 'git status' },
@@ -66,7 +66,7 @@ test('bashStats per session and all-time: flags per fact, your answers, mean lat
   const text = formatStats(s1, all, 's1');
   assert.match(text, /^jevgate guard \(bash \+ file tools\)\nsession   free     1 \( 14%\)  allow     1  asked    2 \(✓1 ✗0\)  denied    2  unreachable   1  avg 420ms/);
   assert.match(text, /all-time  free     1/);
-  assert.match(text, /denied by flag \(all-time\): deletes remote 1, not requested 1, file:exposes_secret 1/);
+  assert.match(text, /denied by flag \(all-time\): deletes remote 1, not requested 1, exposes_secret \[F\] 1/);
   assert.match(text, /asked by flag \(all-time\): deletes local_no_copy 1/);
 });
 
@@ -102,4 +102,11 @@ test('bashStats keeps call timings next to latencies, and the newest Jev call of
   assert.deepEqual(s.timingRecent, [{ ms: 600, prep: 150, connect: 90, server: 70, answered: true, tries: 1 }, undefined]);
   assert.deepEqual(s.lastCall, { ms: 900, prep: 1, connect: 80, server: 300, answered: true, tries: 1 });
   assert.deepEqual(bashStats(entries.slice(0, 3), 's').lastCall, { ms: 8132, prep: 150, connect: 90, server: undefined, answered: false, tries: 2 });
+});
+
+test('flagLabel marks file-tool flags with [F], kept when the name is cut', () => {
+  assert.equal(flagLabel('file:exposes_secret'), 'exposes_secret [F]');
+  assert.equal(flagLabel('exposes_secret'), 'exposes_secret');
+  assert.equal(flagLabel('file:deletes local_no_copy', 20), 'deletes local_no [F]');
+  assert.equal(flagLabel('deletes local_no_copy', 10), 'deletes lo');
 });

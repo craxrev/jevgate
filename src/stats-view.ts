@@ -1,6 +1,6 @@
 // The /jevgate pane as plain lines: text plus style, no `$`, so the layout is
 // unit-testable and the function-hook module only maps lines to Text elements.
-import type { BashStats, Timing } from './ui-model.ts';
+import { flagLabel, type BashStats, type Timing } from './ui-model.ts';
 
 export type Segment = { text: string; color?: string; dim?: boolean };
 /**
@@ -152,7 +152,7 @@ export function statsLines(v: StatsView): Line[] {
     out.push({ text: title, bold: true });
     const max = Math.max(1, ...rows.map(([, n]) => n));
     for (const [c, n] of rows.slice(0, 6)) {
-      out.push({ text: ` ${c.replace(/^file:/, '✎ ').slice(0, 27).padEnd(28)}${bar(n, max, Math.max(4, barW - 16))} ${String(n).padStart(3)}`, color });
+      out.push({ text: ` ${flagLabel(c, 27).padEnd(28)}${bar(n, max, Math.max(4, barW - 16))} ${String(n).padStart(3)}`, color });
     }
     out.push({ text: '' });
   };

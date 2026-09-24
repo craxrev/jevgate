@@ -143,19 +143,12 @@ function runDir($: Host): Promise<string> {
   return runReady;
 }
 
-async function dataDirs($: Host): Promise<string[]> {
-  const home = (await $.env.get('HOME')) ?? '';
-  // before 0.5.2 the logs sat in the plugin data dir: `jevgate-jevgate` installed, `jevgate-inline` under --plugin-dir
-  const dirs = [await ownDataDir($), `${home}/.claude/plugins/data/jevgate-jevgate`, `${home}/.claude/plugins/data/jevgate-inline`];
-  return [...new Set(dirs)];
-}
-
-/** stats.jsonl, and ui.jsonl where versions 0.4.8 to 0.4.10 wrote answers and compactions. */
+/** stats.jsonl, the one file the footer, row lines and pane read. */
 async function logFiles($: Host): Promise<string[]> {
-  return (await dataDirs($)).flatMap((d) => [`${d}/stats.jsonl`, `${d}/ui.jsonl`]);
+  return [`${await ownDataDir($)}/stats.jsonl`];
 }
 
-/** The newest entries of every stats and UI log, merged oldest first. Missing logs = empty. */
+/** The newest entries of the stats log, oldest first. A missing log = empty. */
 async function readLog($: Host): Promise<LogEntry[]> {
   const out: LogEntry[] = [];
   for (const p of await logFiles($)) {

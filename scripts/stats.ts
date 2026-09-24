@@ -4,14 +4,13 @@ import { readFileSync, existsSync } from 'node:fs';
 import { parseLog, bashStats, latestSession, formatStats } from '../src/ui-model.ts';
 
 const home = process.env.HOME ?? '.';
-// ~/.claude/jevgate since 0.5.2; the plugin data dirs before
-const dirs = [`${home}/.claude/jevgate`, `${home}/.claude/plugins/data/jevgate-jevgate`, `${home}/.claude/plugins/data/jevgate-inline`].filter((d) => existsSync(`${d}/stats.jsonl`));
+const dirs = [`${home}/.claude/jevgate`].filter((d) => existsSync(`${d}/stats.jsonl`));
 if (!dirs.length) {
   console.log('jevgate: no stats log yet');
   process.exit(0);
 }
 const read = (p: string) => (existsSync(p) ? parseLog(readFileSync(p, 'utf8')) : []);
-const entries = dirs.flatMap((d) => [...read(`${d}/stats.jsonl`), ...read(`${d}/ui.jsonl`)]).sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+const entries = dirs.flatMap((d) => read(`${d}/stats.jsonl`)).sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
 const i = process.argv.indexOf('--session');
 const session = i === -1 ? latestSession(entries) : process.argv[i + 1];
 console.log(formatStats(bashStats(entries, session), bashStats(entries), session));

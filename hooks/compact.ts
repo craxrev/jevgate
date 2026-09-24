@@ -24,6 +24,7 @@ import {
   rankQuestions,
   rankScores,
   rankable,
+  fitBudget,
   pickRestore,
   type Msg,
 } from '../src/compact-core.ts';
@@ -128,7 +129,7 @@ function appendDecision($: Host, entry: Record<string, unknown>, near?: string):
       const existing = (await $.fs.exists(path)) ? await $.fs.read(path) : '';
       await $.fs.write(path, existing + line);
     } catch (err) {
-      $.ui.log(`jevgate: could not log (${err instanceof Error ? err.message : String(err)})`);
+      $.ui.log(`could not log (${err instanceof Error ? err.message : String(err)})`);
     }
   });
   return uiWrites;
@@ -260,7 +261,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
         try {
           const apiKey = await resolveApiKey($, cfg);
           if (!apiKey) throw new Error('no TYPESAFE_API_KEY');
-          const ranked = rankable(cands);
+          const ranked = fitBudget(messages, rankable(cands), cfg.compactTruncateHeadChars);
           const state = buildRankState(messages, ranked, cfg.compactTruncateHeadChars);
           const questions = rankQuestions(ranked);
           rank.jev_body_chars = JSON.stringify({ state, questions }).length;
@@ -279,13 +280,13 @@ export const register: Register = (on: On, options: PluginOptions) => {
           for (const id of keep) truncate.delete(id);
           restored = keep.size;
           $.ui.log(
-            'jevgate compact scores: ' +
+            'compact scores: ' +
               cands.map((c) => `${c.tool}:${(scores.get(c.id) ?? 0).toFixed(2)}${keep.has(c.id) ? '*' : ''}`).join(' '),
           );
         } catch (err) {
           // Jev is optional here: without it every candidate is truncated.
           rank.jev_error = err instanceof Error ? err.message : String(err);
-          $.ui.log(`jevgate compact: Jev ranking skipped (${rank.jev_error})`);
+          $.ui.log(`compact: Jev ranking skipped (${rank.jev_error})`);
         }
       }
 
@@ -339,7 +340,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
     try {
       await $.command.register({ name: 'jevgate', description: 'jevgate guard tally: this session and all-time', immediate: true });
     } catch (err) {
-      $.ui.log(`jevgate: /jevgate not registered (${err instanceof Error ? err.message : String(err)})`);
+      $.ui.log(`/jevgate not registered (${err instanceof Error ? err.message : String(err)})`);
     }
     return next(e);
   });
@@ -454,7 +455,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
         }
       }
     } catch (err) {
-      $.ui.log(`jevgate: early compact skipped (${err instanceof Error ? err.message : String(err)})`);
+      $.ui.log(`early compact skipped (${err instanceof Error ? err.message : String(err)})`);
     } finally {
       compacting = false;
     }

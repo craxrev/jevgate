@@ -8,6 +8,7 @@ import {
   rankQuestions,
   rankScores,
   rankable,
+  fitBudget,
   goalMessages,
   pickRestore,
   truncateText,
@@ -138,4 +139,16 @@ test('pickRestore keeps top K above the floor', () => {
   assert.deepEqual([...pickRestore(scores, 2, 0.3)].sort(), ['a', 'c']);
   assert.deepEqual([...pickRestore(scores, 10, 0.3)].sort(), ['a', 'c', 'd']);
   assert.deepEqual([...pickRestore(scores, 0, 0.3)], []);
+});
+
+test('fitBudget keeps the newest candidates that fit, and the request stays under the budget', () => {
+  const big = (i: number) => ({ id: `t${i}`, tool: 'Bash', input: { command: `cmd ${i}` }, text: 'x'.repeat(5000), chars: 5000 });
+  const cands = Array.from({ length: 200 }, (_, i) => big(i));
+  const msgs = [{ role: 'user' as const, text: 'fix the build', toolUses: [] }];
+  const fit = fitBudget(msgs, cands, 300, 26_000);
+  assert.ok(fit.length > 20 && fit.length < 200, String(fit.length));
+  assert.equal(fit.at(-1)!.id, 't199');
+  const size = JSON.stringify({ state: buildRankState(msgs, fit, 300), questions: rankQuestions(fit) }).length;
+  assert.ok(size <= 26_000, String(size));
+  assert.equal(fitBudget(msgs, cands.slice(0, 5), 300, 26_000).length, 5);
 });

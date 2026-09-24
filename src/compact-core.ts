@@ -153,6 +153,34 @@ export function buildRankState(messages: readonly Msg[], cands: readonly Candida
 
 /** Jev allows at most 255 options in a Choice; the rest are truncated without asking. */
 export const MAX_RANKED = 250;
+
+/**
+ * Chars of state and questions one ranking request may carry. Jev refuses a
+ * request over its token limit (`max_tokens_exceeded`): 26k chars (11k tokens)
+ * went through, 85k did not, and the limit between is not known, so the largest
+ * size seen to pass.
+ */
+export const RANK_BUDGET_CHARS = 26_000;
+
+/**
+ * The candidates one ranking request can carry: the newest that fit in `budget`
+ * chars with the goal, oldest dropped first (the least likely to be needed).
+ * Those left out are truncated without asking, as past MAX_RANKED.
+ */
+export function fitBudget(messages: readonly Msg[], cands: readonly Candidate[], headChars: number, budget = RANK_BUDGET_CHARS): Candidate[] {
+  const base = JSON.stringify({ state: { goal: goalMessages(messages), calls: [] }, questions: rankQuestions([]) }).length;
+  let used = base;
+  let from = cands.length;
+  for (let i = cands.length - 1; i >= 0; i--) {
+    const one = buildRankState([], [cands[i]!], headChars).calls[0]!;
+    // the entry in `calls`, and its option in the Choice's criteria
+    const cost = JSON.stringify(one).length + JSON.stringify({ [one.id]: `calls[${i}] (${one.tool})` }).length + 2;
+    if (used + cost > budget) break;
+    used += cost;
+    from = i;
+  }
+  return cands.slice(from);
+}
 export const NONE_OPTION = 'none';
 
 /**

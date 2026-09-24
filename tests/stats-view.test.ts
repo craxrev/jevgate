@@ -113,3 +113,11 @@ test('with one connection kept open, connect is left out of the legend', () => {
   assert.doesNotMatch(text, / connect /);
   assert.match(text, / Jev /);
 });
+
+test("the latency section shows Jev's own time, last call and average, on a fixed line", () => {
+  const t = (server: number) => ({ ms: 300, prep: 20, connect: 0, server, answered: true, tries: 1 });
+  const text = statsLines({ session: stats({ lastCall: t(57), timingRecent: [t(57), t(103)] }), all: stats(), width: 44, entries: 10 }).map((l) => l.text);
+  assert.ok(text.includes(' Jev itself: last   57ms · avg   80ms'), text.join('\n'));
+  const none = statsLines({ session: stats(), all: stats(), width: 44, entries: 10 }).map((l) => l.text);
+  assert.ok(!none.some((l) => l.includes('Jev itself')));
+});

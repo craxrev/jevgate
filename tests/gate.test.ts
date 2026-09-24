@@ -122,13 +122,10 @@ test('file guard: a write to the repo root from a subfolder session is judged', 
   assert.equal(own.lines[0]!.kind, 'free');
 });
 
-test("Jev's own time comes from its gateway header; the first call of a load is marked cold", async () => {
+test("Jev's own time comes from its gateway header", async () => {
   const withHeader: FetchLike = async (url, init) => ({ ...(await jev()(url, init)), headers: { 'x-envoy-upstream-service-time': '23' } });
-  const warm = await judgeBash('rm -rf build', ids, host({ fetch: withHeader }));
-  assert.equal(warm.log?.serverMs, 23);
-  assert.equal(warm.log?.cold, undefined);
-  assert.equal(warm.log?.connectMs, undefined);
-  const cold = await judgeBash('rm -rf build', ids, host({ cold: true }));
-  assert.equal(cold.log?.cold, true);
-  assert.equal(cold.log?.serverMs, undefined);
+  const out = await judgeBash('rm -rf build', ids, host({ fetch: withHeader }));
+  assert.equal(out.log?.serverMs, 23);
+  assert.equal(out.log?.connectMs, undefined);
+  assert.equal((await judgeBash('rm -rf build', ids, host())).log?.serverMs, undefined);
 });

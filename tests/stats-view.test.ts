@@ -107,14 +107,9 @@ test('the pane shows where the time goes for the last call and the average', () 
   assert.ok(!none.includes('Where the time goes'), 'hidden until a call has timings');
 });
 
-test('with one connection kept open: no connect in the legend, a cold call is noted and left out of the average', () => {
+test('with one connection kept open, connect is left out of the legend', () => {
   const warm = { ms: 300, prep: 20, connect: 0, server: 20, answered: true, tries: 1 };
-  const cold = { ms: 760, prep: 20, connect: 0, server: 20, answered: true, tries: 1, cold: true };
-  const lines = statsLines({ session: stats({ lastCall: cold, timingRecent: [cold, warm, warm] }), all: stats(), width: 44, entries: 10 });
-  const text = lines.map((l) => l.text).join('\n');
+  const text = statsLines({ session: stats({ lastCall: warm, timingRecent: [warm, warm] }), all: stats(), width: 44, entries: 10 }).map((l) => l.text).join('\n');
   assert.doesNotMatch(text, / connect /);
   assert.match(text, / Jev /);
-  assert.match(text, /opened the connection to Jev/);
-  assert.match(text, /avg of the last 2 answered calls/);
-  assert.equal(meanTiming([cold, warm])!.ms, 300);
 });

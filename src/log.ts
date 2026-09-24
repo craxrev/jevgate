@@ -10,7 +10,7 @@ export type Decision = {
 };
 
 /** What the footer, row lines and /jevgate read: no commands, paths or prompts. */
-export const STATS_FIELDS = ['ts', 'feature', 'action', 'session', 'tool_use_id', 'category', 'reason', 'ms', 'startMs', 'prepMs', 'connectMs', 'serverMs', 'cold', 'tries'] as const;
+export const STATS_FIELDS = ['ts', 'feature', 'action', 'session', 'tool_use_id', 'category', 'reason', 'ms', 'startMs', 'prepMs', 'connectMs', 'serverMs', 'tries'] as const;
 
 export function statsEntry(d: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};

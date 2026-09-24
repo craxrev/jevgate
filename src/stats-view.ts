@@ -65,9 +65,9 @@ export function timingBar(t: Timing, max: number, width: number): Segment[] {
   return out;
 }
 
-/** The mean of each part over answered calls; a cold call's connecting would skew it, so it is left out. */
+/** The mean of each part over answered calls. */
 export function meanTiming(ts: readonly Timing[]): Timing | undefined {
-  const a = ts.filter((t) => t.answered && !t.cold);
+  const a = ts.filter((t) => t.answered);
   if (!a.length) return undefined;
   const m = (f: (t: Timing) => number) => Math.round(a.reduce((n, t) => n + f(t), 0) / a.length);
   return { ms: m((t) => t.ms), prep: m((t) => t.prep), connect: m((t) => t.connect), server: m((t) => t.server ?? 0), answered: true, tries: 1 };
@@ -136,11 +136,10 @@ export function statsLines(v: StatsView): Line[] {
     const shown = [s.lastCall, avg].some((t) => (t?.connect ?? 0) > 0) ? TIMING_PARTS : TIMING_PARTS.filter((p) => p.name !== 'connect');
     for (const p of shown) legend.push({ text: ' █', color: 'color' in p ? p.color : undefined, dim: 'dim' in p }, { text: ` ${p.name} `, dim: true });
     out.push({ text: legend.map((g) => g.text).join(''), segments: legend });
-    if (s.lastCall?.cold) out.push({ text: ' last call opened the connection to Jev: its network part includes connecting', dim: true });
     if (s.lastCall && !s.lastCall.answered) {
       out.push({ text: ` last call: Jev did not answer${s.lastCall.tries > 1 ? ` (${s.lastCall.tries} tries)` : ''}`, color: COLORS.unreachable });
     }
-    if (avg) out.push({ text: ` avg of the last ${s.timingRecent.slice(-chartW).filter((t) => t?.answered && !t.cold).length} answered calls`, dim: true });
+    if (avg) out.push({ text: ` avg of the last ${s.timingRecent.slice(-chartW).filter((t) => t?.answered).length} answered calls`, dim: true });
     out.push({ text: '' });
   }
 

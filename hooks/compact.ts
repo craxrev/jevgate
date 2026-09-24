@@ -522,7 +522,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
       const dir = `${await ownDataDir($)}/verdicts`;
       await $.process.run(['sh', '-c', 'mkdir -p "$1" && chmod 700 "$1" && find "$1" -type f -mmin +60 -delete', 'jevgate', dir], { timeoutMs: 5000 });
     } catch (err) {
-      $.ui.log(`jevgate: verdicts dir not prepared (${err instanceof Error ? err.message : String(err)})`);
+      $.ui.log(`verdicts dir not prepared (${err instanceof Error ? err.message : String(err)})`);
     }
     try {
       await $.command.register({ name: 'jevgate', description: 'jevgate guard tally: this session and all-time', immediate: true });
@@ -604,7 +604,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
       const entry = await gate($, guard, e);
       if (entry) logged = appendDecision($, entry);
     } catch (err) {
-      $.ui.log(`jevgate: guard failed, answer.sh decides (${err instanceof Error ? err.message : String(err)})`);
+      $.ui.log(`guard failed, answer.sh decides (${err instanceof Error ? err.message : String(err)})`);
     }
     const result = await next(e);
     $.clock.after(1, async () => {
@@ -642,7 +642,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
       try {
         await logSlips($);
       } catch (err) {
-        $.ui.log(`jevgate: slips not checked (${err instanceof Error ? err.message : String(err)})`);
+        $.ui.log(`slips not checked (${err instanceof Error ? err.message : String(err)})`);
       }
     });
     // the main agent's answer only; a follow-up means the model goes on, so no reminder now

@@ -1,70 +1,16 @@
 {
   "hooks": {
-    "PreToolUse": [
+    "SessionStart": [
       {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/hooks/run.sh",
-              "closed",
-              "${CLAUDE_PLUGIN_ROOT}/hooks/bash-gate.ts"
-            ],
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/hooks/run.sh",
-              "closed",
-              "${CLAUDE_PLUGIN_ROOT}/hooks/file-gate.ts"
-            ],
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/hooks/run.sh",
-              "open",
-              "${CLAUDE_PLUGIN_ROOT}/hooks/agent-gate.ts"
-            ],
-            "timeout": 10
-          }
-        ]
+        "hooks": [{ "type": "command", "command": "sh", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/warn.sh"], "timeout": 5 }]
       }
     ],
-    "Stop": [
+    "PreToolUse": [
       {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/hooks/run.sh",
-              "open",
-              "${CLAUDE_PLUGIN_ROOT}/hooks/done-check.ts"
-            ],
-            "timeout": 30
-          }
-        ]
+        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit|Read",
+        "hooks": [{ "type": "command", "command": "sh", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/answer.sh"], "timeout": 5 }]
       }
     ]
   },
-  "modules": [
-    "./compact.ts"
-  ]
+  "modules": ["./compact.ts"]
 }

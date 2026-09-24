@@ -41,44 +41,9 @@ export function needsGitStatus(parsed: Parsed): boolean {
   );
 }
 
-export function allowOutput(reason: string) {
-  return {
-    hookSpecificOutput: {
-      hookEventName: 'PreToolUse',
-      permissionDecision: 'allow',
-      permissionDecisionReason: reason,
-    },
-  };
-}
-
-export function askOutput(reason: string) {
-  return {
-    hookSpecificOutput: {
-      hookEventName: 'PreToolUse',
-      permissionDecision: 'ask',
-      permissionDecisionReason: reason,
-    },
-  };
-}
-
-export function denyOutput(reason: string) {
-  return {
-    hookSpecificOutput: {
-      hookEventName: 'PreToolUse',
-      permissionDecision: 'deny',
-      permissionDecisionReason: reason,
-    },
-  };
-}
-
-/** Jev unreachable in bypass mode: the guard cannot judge, so nothing unjudged runs. */
+/** Jev unreachable where nothing else judges (bypass, dontAsk): answer.sh refuses with this. */
 export const UNREACHABLE_REASON =
   'jevgate: Jev unreachable, refusing to run unguarded. Switch to auto mode (Shift+Tab) or retry.';
 
-/** The gateway in front of Jev refuses some requests by their content; in bypass mode a person decides those. */
+/** The gateway in front of Jev refuses some requests by their content; where nothing else judges, answer.sh asks with this. */
 export const BLOCKED_REASON = 'jevgate: asking · Jev could not judge this (request blocked by its gateway)';
-
-/** Modes with no review of their own behind the hook: a silent hook means the command runs. */
-export function failsClosed(permissionMode: string | undefined): boolean {
-  return permissionMode === undefined || permissionMode === 'bypassPermissions' || permissionMode === 'dontAsk';
-}

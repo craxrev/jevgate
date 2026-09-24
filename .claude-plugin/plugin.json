@@ -1,6 +1,6 @@
 {
   "name": "jevgate",
-  "version": "0.4.11",
+  "version": "0.5.0",
   "description": "Jev-backed gates for Claude Code: bash guard for bypass mode, file guard, done-check, subagent gate, verbatim compaction. Each feature toggles independently.",
   "license": "MIT",
   "author": {
@@ -87,19 +87,19 @@
     "doneEnabled": {
       "type": "boolean",
       "title": "Done-check",
-      "description": "Block Claude from stopping when the diff does not cover the request or the final message overclaims.",
+      "description": "When Claude says it is done and the diff does not cover the request or the final message overclaims, send a follow-up prompt so Claude goes on.",
       "default": true
     },
     "doneCoverMin": {
       "type": "number",
       "title": "Done-check: coverage to pass",
-      "description": "Jev rates how much of the request the diff implements on a ladder: 0 none, 1 a small part, 2 most, 3 all. Below this the stop is blocked with the rung named.",
+      "description": "Jev rates how much of the request the diff implements on a ladder: 0 none, 1 a small part, 2 most, 3 all. Below this a follow-up names the rung.",
       "default": 2.5
     },
     "doneMaxBlocks": {
       "type": "number",
-      "title": "Done-check max blocks",
-      "description": "Blocks per turn before letting Claude stop anyway.",
+      "title": "Done-check max follow-ups",
+      "description": "Follow-ups per request before letting Claude stop anyway.",
       "default": 2
     },
     "agentEnabled": {

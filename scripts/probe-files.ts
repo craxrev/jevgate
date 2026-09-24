@@ -8,7 +8,20 @@ import { ask } from '../src/jev.ts';
 import { nodeFetch } from '../src/node-fetch.ts';
 import { FILE_FACTS, FILE_QUESTIONS, resolveFacts, decideFacts, type Outcome } from '../src/facts.ts';
 import { insideProject, contentHead, type FileInput, type FileState } from '../src/file-policy.ts';
-import { parseTranscript } from '../src/transcript.ts';
+import { turnsOf, type Row } from '../src/transcript.ts';
+
+/** A transcript line's main-thread text as a session row, or nothing. */
+function rowsOfLine(line: string): Row[] {
+  try {
+    const e = JSON.parse(line) as { type?: string; isSidechain?: boolean; message?: { content?: string | { type?: string; text?: string }[] } };
+    if (e.isSidechain || (e.type !== 'user' && e.type !== 'assistant')) return [];
+    const c = e.message?.content;
+    const text = typeof c === 'string' ? c : (c ?? []).filter((b) => b.type === 'text').map((b) => b.text ?? '').join('\n');
+    return [{ role: e.type, text }];
+  } catch {
+    return [];
+  }
+}
 
 const HOME = '/Users/me';
 const REPO = `${HOME}/dev/repo`;
@@ -82,7 +95,7 @@ function realCases(): { c: Case; cwd: string }[] {
             out.push({ c, cwd });
           }
         }
-        for (const t of parseTranscript(line)) turns.push({ role: t.role, text: t.text.length > 1500 ? t.text.slice(0, 1500) + ' […]' : t.text });
+        for (const t of turnsOf(rowsOfLine(line))) turns.push({ role: t.role, text: t.text.length > 1500 ? t.text.slice(0, 1500) + ' […]' : t.text });
       }
     }
   }

@@ -97,17 +97,6 @@ export function decide(res: JevResponse, t: Thresholds): DoneDecision {
   };
 }
 
-export function blockOutput(reason: string) {
-  return { decision: 'block', reason };
-}
-
-/** Block counter per session; resets when a fresh (non-hook-triggered) stop arrives. */
-export type Counter = { blocks: number };
-
-export function nextCounter(prev: Counter | undefined, stopHookActive: boolean): Counter {
-  if (!stopHookActive || !prev) return { blocks: 0 };
-  return { blocks: prev.blocks };
-}
 
 const FILE_WRITERS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 /** git subcommands that change files in the working tree; push, fetch, pull, commit, tag and the like do not. */

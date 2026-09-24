@@ -13,9 +13,17 @@
 // Everything UI is best-effort and must never break the hooks it decorates.
 // The validator follows `$` only within this file, so all of it lives here.
 import type { EngineInterface, On, PluginOptions, Register, RenderElement, SessionMessage } from 'claude-code';
-import { fromRaw, type Config } from '../src/config.ts';
+import { dataDirOf, fromRaw, type Config } from '../src/config.ts';
+import { logLines, type Decision } from '../src/log.ts';
 import { CANCEL, LATER, SUMMARY, TRIM, choiceOf, snoozeTo, type CompactChoice } from '../src/compact-ask.ts';
-import { ask, type FetchLike } from '../src/jev.ts';
+import { ask, JevTransientError, type FetchLike } from '../src/jev.ts';
+import { judgeBash, judgeFile, type GateHost } from '../src/gate.ts';
+import { doneCheck } from '../src/done.ts';
+import { buildState as agentState, QUESTIONS as AGENT_QUESTIONS, decide as decideAgent } from '../src/agent-policy.ts';
+import { matchFragment, safeId, verdictText } from '../src/verdict.ts';
+import { recentTurns, turnsOf, type Row } from '../src/transcript.ts';
+import type { Runner } from '../src/bash-context.ts';
+import type { FileInput } from '../src/file-policy.ts';
 import {
   candidates,
   apply,
@@ -70,8 +78,36 @@ async function resolveApiKey($: Host, cfg: Config): Promise<string | undefined> 
 function hostFetch($: Host): FetchLike {
   return async (url, init) => {
     const r = await $.http.fetch(url, init);
-    return { status: r.status, ok: r.ok, text: r.text };
+    return { status: r.status, ok: r.ok, text: r.text, headers: r.headers };
   };
+}
+
+/** A program through `$.process.run`: stdout, or undefined when it fails (`anyExit`: whatever the exit code). */
+function hostRunner($: Host): Runner {
+  return async (program, args, cwd, opts) => {
+    try {
+      const r = await $.process.run([program, ...args], { cwd, timeoutMs: 5000 });
+      return r.exitCode === 0 || opts?.anyExit ? r.stdout : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+}
+
+/**
+ * `p`, or a rejection once `ms` passed. The timer is dropped as soon as `p`
+ * settles: a `$.clock.sleep` counts against the hook's budget, `p`'s wait does not.
+ */
+async function timed<T>($: Host, p: Promise<T>, ms: number): Promise<T> {
+  const ctl = new AbortController();
+  const timeout = $.clock.sleep(ms, { signal: ctl.signal }).then(() => {
+    throw new JevTransientError(`Jev did not answer within ${ms}ms`);
+  });
+  try {
+    return await Promise.race([p, timeout]);
+  } finally {
+    ctl.abort();
+  }
 }
 
 /** Maps rebuilt messages back onto the engine's shape; untouched ones keep their handle. */
@@ -80,15 +116,19 @@ function toSession(input: readonly SessionMessage[], output: readonly Msg[]): Se
   return output.map((m) => (own.has(m) ? (m as SessionMessage) : (m as SessionMessage)));
 }
 
-async function dataDirs($: Host): Promise<string[]> {
-  const home = (await $.env.get('HOME')) ?? '';
-  const data = await $.env.get('CLAUDE_PLUGIN_DATA');
-  // the command hooks write to their plugin data dir: `jevgate-jevgate` when installed, `jevgate-inline` under --plugin-dir
-  const dirs = [data, `${home}/.claude/plugins/data/jevgate-jevgate`, `${home}/.claude/plugins/data/jevgate-inline`, `${home}/.claude/jevgate`];
-  return [...new Set(dirs.filter((d): d is string => !!d))];
+/** The data dir Claude Code hands this plugin's command hooks, which answer.sh reads verdicts from. */
+async function ownDataDir($: Host): Promise<string> {
+  return dataDirOf($.plugin.root, $.plugin.name, (await $.env.get('HOME')) ?? '');
 }
 
-/** The gates append to stats.jsonl; this module writes only ui.jsonl, since `$.fs` can only rewrite a whole file. */
+async function dataDirs($: Host): Promise<string[]> {
+  const home = (await $.env.get('HOME')) ?? '';
+  // older logs: `jevgate-jevgate` when installed, `jevgate-inline` under --plugin-dir, `~/.claude/jevgate` before either
+  const dirs = [await ownDataDir($), `${home}/.claude/plugins/data/jevgate-jevgate`, `${home}/.claude/plugins/data/jevgate-inline`, `${home}/.claude/jevgate`];
+  return [...new Set(dirs)];
+}
+
+/** stats.jsonl, and ui.jsonl where versions 0.4.8 to 0.4.10 wrote answers and compactions. */
 async function logFiles($: Host): Promise<string[]> {
   return (await dataDirs($)).flatMap((d) => [`${d}/stats.jsonl`, `${d}/ui.jsonl`]);
 }
@@ -105,34 +145,31 @@ async function readLog($: Host): Promise<LogEntry[]> {
   return out.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
 }
 
-/** Next to the gates' stats.jsonl; `near`, text of a gate entry this one belongs with, picks the dir that has it. */
-async function uiLogPath($: Host, near?: string): Promise<string> {
-  let first: string | undefined;
-  for (const d of await dataDirs($)) {
-    const stats = `${d}/stats.jsonl`;
-    if (!(await $.fs.exists(stats))) continue;
-    if (!near || (await $.fs.read(stats)).includes(near)) return `${d}/ui.jsonl`;
-    first ??= `${d}/ui.jsonl`;
-  }
-  return first ?? `${(await dataDirs($))[0]!}/ui.jsonl`;
+/** The `log` option, set by `register`: whether the full log is written. */
+const fullLog = { on: false };
+
+/** Appends for real (`cat >>`): several sessions write the same files, and `$.fs` only rewrites whole ones. */
+async function appendText($: Host, path: string, text: string): Promise<void> {
+  const r = await $.process.run(['sh', '-c', 'umask 077; mkdir -p "$(dirname "$1")" && cat >> "$1"', 'jevgate', path], { stdin: text, timeoutMs: 5000 });
+  if (r.exitCode !== 0) throw new Error(`append to ${path} exited ${r.exitCode}`);
 }
 
-/** Chains this module's rewrites of ui.jsonl, so two of them never read the same old text. */
-let uiWrites: Promise<void> = Promise.resolve();
+/** Chains this module's appends, so its lines land in the order they were logged. */
+let appends: Promise<void> = Promise.resolve();
 
-/** Appends one line to ui.jsonl. `$.fs` has no append, so read + write; best effort. */
-function appendDecision($: Host, entry: Record<string, unknown>, near?: string): Promise<void> {
-  const line = JSON.stringify({ ts: new Date().toISOString(), ...entry }) + '\n';
-  uiWrites = uiWrites.then(async () => {
+/** Logs one decision: its stats fields to stats.jsonl, the whole entry to the full log when that is on. Best effort. */
+function appendDecision($: Host, entry: Decision): Promise<void> {
+  const lines = logLines(entry, fullLog.on);
+  appends = appends.then(async () => {
     try {
-      const path = await uiLogPath($, near);
-      const existing = (await $.fs.exists(path)) ? await $.fs.read(path) : '';
-      await $.fs.write(path, existing + line);
+      const dir = await ownDataDir($);
+      await appendText($, `${dir}/stats.jsonl`, lines.stats);
+      if (lines.full) await appendText($, `${dir}/decisions-v2.jsonl`, lines.full);
     } catch (err) {
       $.ui.log(`could not log (${err instanceof Error ? err.message : String(err)})`);
     }
   });
-  return uiWrites;
+  return appends;
 }
 
 const GUARDED = new Set(['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read']);
@@ -146,6 +183,115 @@ function abandoned(signal: AbortSignal): Promise<never> {
     if (signal.aborted) stop();
     else signal.addEventListener('abort', stop, { once: true });
   });
+}
+
+/** What the guards keep for one load of the module. */
+type GuardState = {
+  cfg: Config;
+  /** Looked up once per load; null until then. */
+  apiKey: string | undefined | null;
+  /** The person's request the done-check judges against, kept across its own follow-ups. */
+  request?: string;
+  /** Follow-ups sent for `request`, and the latest one's text, so its turn is not taken for a new request. */
+  followUps: number;
+  followUp?: string;
+};
+
+async function key($: Host, st: GuardState): Promise<string | undefined> {
+  if (st.apiKey === null) st.apiKey = await resolveApiKey($, st.cfg);
+  return st.apiKey;
+}
+
+async function gateHost($: Host, st: GuardState): Promise<GateHost> {
+  const { cfg } = st;
+  return {
+    cfg,
+    apiKey: await key($, st),
+    run: hostRunner($),
+    fetch: hostFetch($),
+    exists: (p) => $.fs.exists(p),
+    rulesFile: async () => {
+      if (!cfg.rulesFile) return undefined;
+      try {
+        return JSON.parse(await $.fs.read(cfg.rulesFile));
+      } catch {
+        return undefined;
+      }
+    },
+    turns: async () => turnsOf((await $.session.messages()) as Row[]),
+    cwd: await $.session.cwd(),
+    home: (await $.env.get('HOME')) ?? undefined,
+    timed: (p, ms) => timed($, p, ms),
+  };
+}
+
+/**
+ * Judges a guarded call and leaves the verdict for answer.sh, before the call goes on to
+ * Claude Code's permission step. Throws when it cannot: then there is no verdict, and
+ * answer.sh refuses where nothing else judges (bypass), or leaves the call to Claude Code.
+ */
+async function gate($: Host, st: GuardState, e: { tool: string; tool_use_id: string }): Promise<Decision | undefined> {
+  const input = e as unknown as Record<string, unknown>;
+  const ids = { session: await $.session.id(), tool_use_id: e.tool_use_id };
+  const host = await gateHost($, st);
+  const out = e.tool === 'Bash' ? await judgeBash(String(input.command ?? ''), ids, host) : await judgeFile(e.tool, input as FileInput, ids, host);
+  if (safeId(e.tool_use_id)) {
+    const path = `${await ownDataDir($)}/verdicts/${e.tool_use_id}`;
+    const match = matchFragment(e.tool, input);
+    // the match first: answer.sh never finds a verdict without it
+    if (match) await $.fs.write(`${path}.match`, match);
+    await $.fs.write(path, verdictText(out.lines));
+  }
+  return out.log;
+}
+
+/** Refuses a subagent spawn whose answer is already in the conversation; undefined lets it run. */
+async function agentGate($: Host, st: GuardState, input: { prompt?: string; subagent_type?: string; description?: string }): Promise<string | undefined> {
+  const { cfg } = st;
+  try {
+    const k = await key($, st);
+    if (!cfg.agentEnabled || !k || !input.prompt?.trim()) return undefined;
+    const recent = recentTurns(turnsOf((await $.session.messages()) as Row[]), cfg.agentRecentTurns);
+    if (!recent.length) return undefined;
+    const t0 = Date.now();
+    const res = await timed($, ask(hostFetch($), { apiKey: k, model: cfg.model, retries: 0 }, agentState(recent, input), AGENT_QUESTIONS), cfg.timeoutMs);
+    const d = decideAgent(res, cfg.agentThreshold);
+    await appendDecision($, { feature: 'agent', action: d.action, session: await $.session.id(), subagent: input.subagent_type, description: input.description, scores: d.scores, ms: Date.now() - t0 });
+    return d.action === 'deny' ? d.reason : undefined;
+  } catch (err) {
+    await appendDecision($, { feature: 'agent', action: 'error', error: String(err) });
+    return undefined;
+  }
+}
+
+/** The done-check at a turn's end; true when it sent a follow-up and the model goes on. */
+async function doneStep($: Host, st: GuardState, answer: string): Promise<boolean> {
+  const { cfg } = st;
+  const k = await key($, st);
+  if (!cfg.doneEnabled || !k || !answer.trim()) return false;
+  const session = await $.session.id().catch(() => undefined);
+  try {
+    const out = await doneCheck(
+      { cfg, apiKey: k, run: hostRunner($), fetch: hostFetch($), cwd: await $.session.cwd(), timed: (p, ms) => timed($, p, ms) },
+      { session, finalMessage: answer, rows: (await $.session.messages()) as Row[], request: st.request, blocks: st.followUps },
+    );
+    if (out.log) await appendDecision($, out.log);
+    if (out.action === 'pass') {
+      if (out.log?.action === 'cap-reached') {
+        $.ui.toast(`jevgate: done-check sent ${st.followUps} follow-ups, letting it stop`, { timeoutMs: 8000 });
+        st.followUps = 0;
+      }
+      return false;
+    }
+    st.followUps++;
+    st.followUp = out.reason;
+    // queued from a timer: the prompt starts its turn once this one has ended
+    $.clock.after(1, () => $.prompt.submit({ text: out.reason }));
+    return true;
+  } catch (err) {
+    await appendDecision($, { feature: 'done', action: 'error', session, error: String(err) });
+    return false;
+  }
 }
 
 /** Mutable UI state for one load of the module. */
@@ -216,7 +362,8 @@ export const register: Register = (on: On, options: PluginOptions) => {
   const ui: UiRuntime = { compactions: [], rowCache: new Map(), grouped: new Set(), footer: undefined };
   const compactions = ui.compactions;
   const rowCache = ui.rowCache;
-
+  fullLog.on = cfg.log;
+  const guard: GuardState = { cfg, apiKey: null, followUps: 0 };
   on('session.compact', async ($, e, next) => {
     if (!cfg.compactEnabled) return next(e);
     // At Claude Code's own limit (and its precompute for it) Claude Code compacts: jevgate asked at compactAtPercent.
@@ -333,10 +480,19 @@ export const register: Register = (on: On, options: PluginOptions) => {
   on('session.end', async ($, e, next) => {
     snoozeUntil = 0;
     compactions.length = 0;
+    guard.request = undefined;
+    guard.followUps = 0;
     return next(e);
   });
 
   on('session.start', async ($, e, next) => {
+    try {
+      // owner-only, and nothing left from a crashed session
+      const dir = `${await ownDataDir($)}/verdicts`;
+      await $.process.run(['sh', '-c', 'mkdir -p "$1" && chmod 700 "$1" && find "$1" -type f -mmin +60 -delete', 'jevgate', dir], { timeoutMs: 5000 });
+    } catch (err) {
+      $.ui.log(`jevgate: verdicts dir not prepared (${err instanceof Error ? err.message : String(err)})`);
+    }
     try {
       await $.command.register({ name: 'jevgate', description: 'jevgate guard tally: this session and all-time', immediate: true });
     } catch (err) {
@@ -386,6 +542,11 @@ export const register: Register = (on: On, options: PluginOptions) => {
   let ticker: { cancel: () => void } | undefined;
   let seen = '';
   on('turn.start', async ($, e, next) => {
+    // a prompt the person typed starts a request; the done-check's own follow-ups continue one
+    if (e.text.trim() && e.text !== guard.followUp) {
+      guard.request = e.text;
+      guard.followUps = 0;
+    }
     if (!ticker) {
       ticker = $.clock.every(1000, () => {
         void (async () => {
@@ -403,18 +564,27 @@ export const register: Register = (on: On, options: PluginOptions) => {
     return next(e);
   });
 
-  // After each guarded call settles, the gate's log entry exists: tick the footer now, not at turn end.
-  // On a timer, so the model gets the tool's result without waiting on the logs.
+  // The guards: judged here, answered by answer.sh in Claude Code's permission step (see gate).
+  // Once the call settles its entry is logged: tick the footer then, on a timer, so the model
+  // gets the tool's result without waiting on the logs.
   on('tool.call', { tool: GUARDED_TOOL }, async ($, e, next) => {
+    let logged: Promise<void> | undefined;
+    try {
+      const entry = await gate($, guard, e);
+      if (entry) logged = appendDecision($, entry);
+    } catch (err) {
+      $.ui.log(`jevgate: guard failed, answer.sh decides (${err instanceof Error ? err.message : String(err)})`);
+    }
     const result = await next(e);
     $.clock.after(1, async () => {
       try {
+        await logged;
         await refresh($, ui);
         // an asked call settles once you answered the prompt
         const answer = rowCache.get(e.tool_use_id)?.startsWith('? ') ? askAnswer(result) : undefined;
         if (answer) {
           const session = await $.session.id();
-          await appendDecision($, { feature: e.tool === 'Bash' ? 'bash' : 'file', action: answer, session, tool_use_id: e.tool_use_id }, `"tool_use_id":"${e.tool_use_id}"`);
+          await appendDecision($, { feature: e.tool === 'Bash' ? 'bash' : 'file', action: answer, session, tool_use_id: e.tool_use_id });
           await refresh($, ui);
         }
       } catch {
@@ -425,10 +595,21 @@ export const register: Register = (on: On, options: PluginOptions) => {
   });
 
 
+  // The subagent guard: refuse a spawn whose answer is already in the conversation.
+  on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
+    const refused = await agentGate($, guard, e as unknown as { prompt?: string; subagent_type?: string; description?: string });
+    return refused ? { deny: refused } : next(e);
+  });
+
   on('turn.complete', async ($, e, next) => {
     if (!e.agentId) {
       ticker?.cancel();
       ticker = undefined;
+    }
+    // the main agent's answer only; a follow-up means the model goes on, so no reminder now
+    if (!e.agentId && e.reason === 'answer' && (await doneStep($, guard, e.answer))) {
+      await refresh($, ui);
+      return next(e);
     }
     await refresh($, ui);
     // only between the main agent's turns: a subagent's turn ends inside the main one

@@ -46,13 +46,3 @@ export function decide(res: JevResponse, threshold: number): AgentDecision {
   }
   return { action: 'pass', reason: `below threshold (p=${scores.in_context.toFixed(2)})`, scores };
 }
-
-export function denyOutput(reason: string) {
-  return {
-    hookSpecificOutput: {
-      hookEventName: 'PreToolUse',
-      permissionDecision: 'deny',
-      permissionDecisionReason: reason,
-    },
-  };
-}

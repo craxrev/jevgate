@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decide, blockOutput, nextCounter, coverageWords, QUESTIONS, turnChangedFiles } from '../src/done-policy.ts';
+import { decide, coverageWords, QUESTIONS, turnChangedFiles } from '../src/done-policy.ts';
 import type { JevResponse } from '../src/jev.ts';
 
 const res = (coverage: number, claims_backed: number, leftovers: number, asks_user: number): JevResponse => ({
@@ -41,17 +41,6 @@ test('coverage is a four-rung score and the words follow the rungs', () => {
   assert.match(coverageWords(1.2), /small part/);
   assert.match(coverageWords(2.4), /still missing/);
   assert.throws(() => decide({ model: 'j', answers: {} }, t), /coverage/);
-});
-
-test('blockOutput uses the top-level Stop contract', () => {
-  assert.deepEqual(blockOutput('why'), { decision: 'block', reason: 'why' });
-});
-
-test('counter resets on a fresh stop and persists while the hook is re-entering', () => {
-  assert.deepEqual(nextCounter(undefined, false), { blocks: 0 });
-  assert.deepEqual(nextCounter({ blocks: 1 }, false), { blocks: 0 });
-  assert.deepEqual(nextCounter({ blocks: 1 }, true), { blocks: 1 });
-  assert.deepEqual(nextCounter(undefined, true), { blocks: 0 });
 });
 
 test('turnChangedFiles: file tools and writing Bash count, reads and plain runs do not', () => {

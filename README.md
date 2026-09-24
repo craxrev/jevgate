@@ -24,7 +24,7 @@ Add your TypeSafe API key to `~/.claude/settings.json`:
 { "env": { "TYPESAFE_API_KEY": "<key>", "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1" } }
 ```
 
-Needs Claude Code 2.1.274+ and Node 22.18+. No build step, no runtime dependencies.
+Needs Claude Code 2.1.281+ with function hooks on (`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`, above): jevgate runs inside Claude Code as a function-hook module. Without them nothing is guarded; jevgate says so when the session starts, and in bypass mode it refuses every guarded call. No build step, no runtime dependencies.
 
 Update: `git -C ~/jevgate pull && claude plugin marketplace update jevgate && claude plugin update jevgate`.
 
@@ -80,9 +80,10 @@ Write instead of `echo >>`. Reading a credential file (`.env`, `~/.ssh`,
 `*.pem`) is refused without asking anyone.
 
 **Done-check.** When Claude says it is done, Jev rates how much of your request
-the diff covers: none, a small part, most, all. Below "all" Claude is sent back
-with the missing rung named. At most twice per turn. A turn that changed no
-files (it only ran or read things) is not checked.
+the diff covers: none, a small part, most, all. Below "all" jevgate sends a
+follow-up prompt naming the missing rung, and Claude goes on in a new turn. At
+most twice per request. A turn that changed no files (it only ran or read
+things) is not checked.
 
 **Subagent gate.** A subagent is refused when the answer is already in the last
 few messages.
@@ -96,7 +97,7 @@ yet (asked again at the next 10%). `/compact` asks the same, with Cancel;
 `/compact <instructions>` runs the built-in summary with them, without asking. At
 Claude Code's own limit its built-in compaction runs, without asking.
 
-If Jev is unreachable (after one retry on a timeout, rate limit or server
+If Jev is unreachable (no answer within `timeoutMs`, a rate limit or server
 error): in bypass mode commands outside the read-only set are refused, since
 nothing else would check them. In other modes jevgate steps aside and Claude
 Code behaves as before. A few commands (writing `/etc/hosts`, some SQL) are
@@ -123,7 +124,7 @@ Set in `/plugin configure jevgate`. Every feature has its own switch.
 | `unrequestedMax` | 0.25 | probability at or below which it counts as not asked for |
 | `doneEnabled` | on | done-check |
 | `doneCoverMin` | 2.5 | coverage rung to pass, 0 none … 3 all |
-| `doneMaxBlocks` | 2 | blocks per turn |
+| `doneMaxBlocks` | 2 | follow-ups per request |
 | `agentEnabled` | on | subagent gate |
 | `agentThreshold` | 0.95 | refuse when the answer is this likely already in context |
 | `compactEnabled` | on | verbatim compaction |
@@ -148,9 +149,10 @@ none / live_reversible / public_permanent, and yes/no for `changes_system`,
 
 Logs live in `~/.claude/plugins/data/jevgate*/`, owner-only:
 
-- `stats.jsonl`: one line per decision with what the footer, the row lines and `/jevgate` need (outcome, flags, timings, session), never commands, paths or prompts. Always on; the first 0.4.8 hook seeds it from an existing `decisions-v2.jsonl`, so all-time counts carry over.
-- `ui.jsonl`: your answers at asks and each compaction, written by the function-hook module (it can only rewrite whole files, so nothing else writes there).
-- `decisions-v2.jsonl`: every decision in full, including the command or path and Jev's facts, scores and gateway responses. Only with the `log` option on; `CLAUDE_PLUGIN_OPTION_LOGPATH` moves it.
+- `stats.jsonl`: one line per decision with what the footer, the row lines and `/jevgate` need (outcome, flags, timings, session), never commands, paths or prompts. Always on.
+- `decisions-v2.jsonl`: every decision in full, including the command or path and Jev's facts, scores and gateway responses. Only with the `log` option on.
+- `verdicts/`: one file per call being judged, gone once Claude Code has the answer (see Failure below).
+- `ui.jsonl`: answers and compactions from 0.4.8 to 0.4.10, still read for the counts.
 
 <details>
 <summary><b>How it decides</b></summary>
@@ -199,12 +201,20 @@ judged call takes 0.3–1 s and about 3.3k input tokens.
 | read of a credential path | local | denied |
 | any other read | local | silent |
 
-### Failure
+### How a call is judged, and failure
 
-Bash and file guards run through `hooks/run.sh`, which keeps each gate's
-stderr in `~/.claude/jevgate/hook-errors.log`. A gate that dies before answering
-becomes a block for these two guards and a silent pass for the others, instead
-of Claude Code's default of running the command with a warning.
+The guards run inside Claude Code, in the module's `tool.call` hook, which comes
+before Claude Code's permission step. That keeps one connection to Jev open for
+the session: a judged call takes about 300ms (the first about 750ms), against
+about 1.6s for the auto-mode classifier. The verdict goes to
+`verdicts/<tool_use_id>`, and `hooks/answer.sh`, a tiny PreToolUse hook, answers
+Claude Code with it, so an ask is Claude Code's own prompt and an allow skips the
+classifier. A function hook cannot answer PreToolUse itself
+([#96831](https://github.com/anthropics/claude-code/issues/96831)).
+
+With no verdict (function hooks off, the module failed, or the call changed after
+it was judged) `answer.sh` refuses in bypass and dontAsk mode and otherwise
+leaves the call to Claude Code, as when Jev is unreachable.
 
 ### Compaction
 
@@ -240,9 +250,13 @@ says why.
 - The dim line appears when a call finishes, not while it runs, and not on rows
   folded into a group.
 - Text-heavy sessions compact by 30–50%, not the 80–90% a summary gives.
-- Once, a gate failed to start and Claude Code ran the command with a warning.
-  `hooks/run.sh` now blocks on that and keeps the trace in
-  `~/.claude/jevgate/hook-errors.log`; the cause is unknown until it recurs.
+- A read-only command jevgate lets through without a word still goes to the
+  auto-mode classifier when Claude Code's own rules do not call it read-only
+  (a longer `ls` or `cat` chain). To decide: answer those with allow too.
+- Function hooks are early access and change between releases; the types in
+  `types/` are regenerated per release with `/plugin-types types`.
+- The done-check's follow-up shows as a prompt from jevgate in the transcript;
+  its text is the generic reason with scores. To do: a shorter, specific one.
 
 ## Development
 

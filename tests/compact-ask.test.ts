@@ -21,14 +21,25 @@ test('snoozeTo is the next 10% step', () => {
 type Handler = ($: unknown, e: Record<string, unknown>, next: (e: unknown) => unknown) => Promise<unknown>;
 
 /** The module registered against a fake engine: `answers` are what the dialog returns in turn (undefined = Esc). */
-type Extra = { useJev?: boolean; fetch?: () => Promise<unknown> };
+type Extra = {
+  useJev?: boolean;
+  fetch?: (url: string, init: { body: string }) => Promise<unknown>;
+  /** A program's result for `$.process.run` (appends are handled apart). */
+  run?: (argv: string[]) => { exitCode: number; stdout: string } | undefined;
+  rows?: unknown[];
+};
 
 function harness(answers: (string | undefined)[], percent: { value: number }, extra: Extra = {}) {
-  const handlers = new Map<string, Handler>();
+  const handlers = new Map<string, { tool?: string | RegExp; h: Handler }[]>();
   const on = (name: string, a: unknown, b?: unknown) => {
     const h = (typeof a === 'function' ? a : b) as Handler;
-    if (!handlers.has(name)) handlers.set(name, h);
+    const tool = typeof a === 'function' ? undefined : (a as { tool?: string | RegExp }).tool;
+    handlers.set(name, [...(handlers.get(name) ?? []), { tool, h }]);
   };
+  /** The first hook on `name` whose tool matcher takes `tool`. */
+  const pick = (name: string, tool?: string): Handler =>
+    handlers.get(name)!.find((r) => r.tool === undefined || (tool !== undefined && (typeof r.tool === 'string' ? r.tool === tool : r.tool.test(tool))))!.h;
+  const submitted: string[] = [];
   const asked: string[] = [];
   const nexts: string[] = [];
   const files = new Map<string, string>();
@@ -38,8 +49,9 @@ function harness(answers: (string | undefined)[], percent: { value: number }, ex
     session: {
       id: async () => 's',
       usage: async () => ({ context: { percent: percent.value } }),
-      compact: async () => handlers.get('session.compact')!($, { trigger: 'plugin', messages: [] }, () => { nexts.push('plugin'); return { messages: [] }; }),
-      messages: async () => [],
+      compact: async () => pick('session.compact')($, { trigger: 'plugin', messages: [] }, () => { nexts.push('plugin'); return { messages: [] }; }),
+      messages: async () => extra.rows ?? [],
+      cwd: async () => '/repo',
     },
     ui: {
       ask: async (q: string) => {
@@ -58,15 +70,34 @@ function harness(answers: (string | undefined)[], percent: { value: number }, ex
       write: async (p: string, t: string) => { await new Promise((r) => setTimeout(r, 5)); files.set(p, t); },
     },
     settings: { read: async () => ({ env: { TYPESAFE_API_KEY: 'k' } }) },
-    http: { fetch: extra.fetch ?? (async () => ({ status: 500, ok: false, text: '' })) },
-    clock: { after: (_ms: number, fn: () => unknown) => (timers.push(fn), { cancel: () => {} }), every: () => ({ cancel: () => {} }) },
+    http: { fetch: extra.fetch ?? (async () => ({ status: 500, ok: false, text: '', headers: {} })) },
+    plugin: { root: '/h/.claude/plugins/cache/jevgate/jevgate/0.5.0', name: 'jevgate' },
+    process: {
+      // appends (`sh -c 'cat >> "$1"' jevgate <path>`) land in `files`; anything else succeeds empty
+      run: async (argv: string[], init?: { stdin?: string }) => {
+        if (argv[0] === 'sh' && String(argv[2]).includes('cat >>')) {
+          await new Promise((r) => setTimeout(r, 5));
+          files.set(argv[4]!, (files.get(argv[4]!) ?? '') + (init?.stdin ?? ''));
+        }
+        return { stderr: '', ...(extra.run?.(argv) ?? { exitCode: 0, stdout: '' }) };
+      },
+    },
+    clock: {
+      after: (_ms: number, fn: () => unknown) => (timers.push(fn), { cancel: () => {} }),
+      every: () => ({ cancel: () => {} }),
+      // Jev's deadline never fires here
+      sleep: () => new Promise(() => {}),
+    },
+    prompt: { submit: async (p: { text: string }) => void submitted.push(p.text) },
   };
   register(on as never, { compactUseJev: extra.useJev ?? false } as never);
-  const compact = (trigger: string, instructions?: string) => handlers.get('session.compact')!($, { trigger, messages: [], instructions }, () => { nexts.push(trigger); return { messages: [] }; });
-  const turn = (agentId?: string) => handlers.get('turn.complete')!($, { agentId }, () => undefined);
-  const end = (reason: string) => handlers.get('session.end')!($, { reason }, () => undefined);
-  const handler = (name: string) => handlers.get(name)!;
-  return { $, compact, turn, end, handler, asked, nexts, files, timers, reads: () => reads };
+  const compact = (trigger: string, instructions?: string) => pick('session.compact')($, { trigger, messages: [], instructions }, () => { nexts.push(trigger); return { messages: [] }; });
+  const turn = (agentId?: string, answer = '') => pick('turn.complete')($, { agentId, reason: 'answer', answer }, () => undefined);
+  const start = (text: string) => pick('turn.start')($, { text, turnId: 't' }, () => undefined);
+  const end = (reason: string) => pick('session.end')($, { reason }, () => undefined);
+  const handler = (name: string, tool?: string) => pick(name, tool);
+  const runTimers = async () => { while (timers.length) await timers.shift()!(); };
+  return { $, compact, turn, start, end, handler, asked, nexts, files, timers, runTimers, submitted, reads: () => reads };
 }
 
 test('/compact asks; Cancel and Esc keep the conversation, the summary hands to Claude Code', async () => {
@@ -132,15 +163,13 @@ test('/clear drops the snooze: the new conversation is asked at compactAtPercent
   assert.equal(h.asked.length, 2);
 });
 
-test('the module writes only ui.jsonl, one line per entry even when two land at once', async () => {
+test('the module appends to stats.jsonl in the order it logged, even when two land at once', async () => {
   const h = harness([CANCEL, CANCEL], { value: 30 });
   await Promise.all([h.compact('manual'), h.compact('manual')]);
-  const path = '/h/.claude/plugins/data/jevgate-jevgate/ui.jsonl';
-  // writes queued by the tests before this one drain first: wait for ours
-  for (let i = 0; i < 200 && (h.files.get(path) ?? '').split('\n').length < 3; i++) await new Promise((r) => setTimeout(r, 10));
-  assert.deepEqual([...h.files.keys()], [path]);
+  const path = '/h/.claude/plugins/data/jevgate-jevgate/stats.jsonl';
   const lines = h.files.get(path)!.trim().split('\n').map((l) => JSON.parse(l));
   assert.deepEqual(lines.map((l) => [l.feature, l.action, l.session]), [['compact', 'cancelled', 's'], ['compact', 'cancelled', 's']]);
+  assert.equal(h.files.has('/h/.claude/plugins/data/jevgate-jevgate/ui.jsonl'), false);
 });
 
 test('an interrupted trim stops waiting on Jev, whose fetch has no signal', async () => {
@@ -162,9 +191,84 @@ test("a guarded tool's result comes back before the logs are read", async () => 
   const h = harness([], { value: 30 });
   const result = { result: 'ok' };
   const before = h.reads();
-  const r = await h.handler('tool.call')(h.$, { tool: 'Bash', tool_use_id: 'x' }, () => result);
+  const r = await h.handler('tool.call', 'Bash')(h.$, { tool: 'Bash', tool_use_id: 'x' }, () => result);
   assert.equal(r, result);
   assert.equal(h.reads(), before);
   assert.equal(h.timers.length, 1);
   await h.timers[0]!();
+});
+
+/** Jev as the module meets it: answers by which questions a request asks. */
+const choiceA = (p: Record<string, number>) => ({ type: 'choice', choice: Object.keys(p)[0], probabilities: p, confidence: 0.5 });
+const noulA = (n: number) => ({ type: 'noul', noul: n });
+function jevFake(over: { coverage?: number; inContext?: number } = {}) {
+  return async (_url: string, init: { body: string }) => {
+    const q = Object.keys(JSON.parse(init.body).questions);
+    const answers = q.includes('coverage')
+      ? { coverage: { type: 'score', score: over.coverage ?? 3, legend: {}, probabilities: {}, confidence: 1 }, claims_backed: noulA(0.9), leftovers: noulA(0.1), asks_user: noulA(0.05) }
+      : q.includes('in_context')
+      ? { in_context: noulA(over.inContext ?? 0.1) }
+      : { deletes: choiceA({ none: 0.97, local_no_copy: 0.02, remote: 0.01 }), ships: choiceA({ none: 0.98, live_reversible: 0.01, public_permanent: 0.01 }), changes_system: noulA(0.03), rewrites_history: noulA(0.02), uploads_data: noulA(0.04), exposes_secret: noulA(0.02), requested: noulA(0.95) };
+    return { status: 200, ok: true, text: JSON.stringify({ model: 'j', answers }), headers: {} };
+  };
+}
+const DATA = '/h/.claude/plugins/data/jevgate-jevgate';
+
+test('a guarded call: the verdict and its match are written before the call goes on, then logged', async () => {
+  const h = harness([], { value: 30 }, { fetch: jevFake() });
+  let seen: string | undefined;
+  const r = await h.handler('tool.call', 'Bash')(h.$, { tool: 'Bash', tool_use_id: 'toolu_9', command: 'rm -rf build' }, () => {
+    seen = h.files.get(`${DATA}/verdicts/toolu_9`);
+    return { result: 'ok' };
+  });
+  assert.deepEqual(r, { result: 'ok' });
+  assert.equal(seen, '*\tallow\t"jevgate: nothing flagged"\n');
+  assert.equal(h.files.get(`${DATA}/verdicts/toolu_9.match`), '"command":"rm -rf build"');
+  await h.runTimers();
+  const logged = h.files.get(`${DATA}/stats.jsonl`)!.trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(logged.map((l) => [l.feature, l.action, l.tool_use_id]), [['bash', 'allow', 'toolu_9']]);
+  assert.equal(logged[0].command, undefined);
+});
+
+test('a subagent whose answer is already in the conversation is refused before it starts', async () => {
+  const rows = [{ role: 'user', text: 'what does slugify do?' }, { role: 'assistant', text: 'It lowercases and dashes the title.' }];
+  const h = harness([], { value: 30 }, { fetch: jevFake({ inContext: 0.99 }), rows });
+  let ran = false;
+  const r = (await h.handler('tool.call', 'Agent')(h.$, { tool: 'Agent', tool_use_id: 'a1', prompt: 'find what slugify does' }, () => ((ran = true), {}))) as { deny?: string };
+  assert.equal(ran, false);
+  assert.match(r.deny!, /already be in the recent conversation/);
+  const passed = harness([], { value: 30 }, { fetch: jevFake({ inContext: 0.1 }), rows });
+  await passed.handler('tool.call', 'Agent')(passed.$, { tool: 'Agent', tool_use_id: 'a2', prompt: 'read the repo' }, () => ((ran = true), {}));
+  assert.equal(ran, true);
+});
+
+test('done-check: a turn that missed part of the request gets follow-ups, at most doneMaxBlocks, then lets it stop', async () => {
+  const rows = [
+    { role: 'user', text: 'Add slugify and a test for it.' },
+    { role: 'assistant', text: 'Done.', toolUses: [{ tool: 'Write', input: { file_path: 'src/slug.ts' } }] },
+  ];
+  // a repository with one changed file
+  const run = (argv: string[]) => {
+    const k = argv.slice(1).join(' ');
+    if (k === 'diff HEAD --name-only --no-color') return { exitCode: 0, stdout: 'src/slug.ts\n' };
+    if (k.startsWith('diff HEAD --no-color')) return { exitCode: 0, stdout: '+export const slugify = 1;\n' };
+    return { exitCode: 0, stdout: 'x\n' };
+  };
+  const h = harness([], { value: 30 }, { fetch: jevFake({ coverage: 1.9 }), rows, run });
+  await h.start('Add slugify and a test for it.');
+  await h.turn(undefined, 'Added slugify.');
+  await h.runTimers();
+  assert.equal(h.submitted.length, 1);
+  assert.match(h.submitted[0]!, /^jevgate done-check: the main change is there/);
+  // the follow-up's own turn continues the request, it does not start a new one
+  await h.start(h.submitted[0]!);
+  await h.turn(undefined, 'Added slugify.');
+  await h.runTimers();
+  assert.equal(h.submitted.length, 2);
+  await h.start(h.submitted[1]!);
+  await h.turn(undefined, 'Added slugify.');
+  await h.runTimers();
+  assert.equal(h.submitted.length, 2, 'past doneMaxBlocks the turn may end');
+  const actions = h.files.get(`${DATA}/stats.jsonl`)!.trim().split('\n').map((l) => JSON.parse(l).action);
+  assert.deepEqual(actions, ['block', 'block', 'cap-reached']);
 });

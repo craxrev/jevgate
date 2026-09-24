@@ -2,7 +2,7 @@
 // asked. A write outside it gets the file facts from facts.ts (one Jev call); a
 // read of a secret path is refused locally. Paths are the whole story here, so
 // most calls cost nothing.
-import { resolve, isAbsolute } from 'node:path';
+import { resolve, isAbsolute } from './paths.ts';
 import { SENSITIVE_PATH } from './free.ts';
 
 export const FILE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read'] as const;

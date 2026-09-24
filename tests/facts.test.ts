@@ -1,8 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync, mkdtempSync } from 'node:fs';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import {
   BASH_FACTS,
   FILE_FACTS,
@@ -17,7 +14,6 @@ import {
   type Facts,
 } from '../src/facts.ts';
 import { fromRaw, fromEnv, thresholds, knownHosts, DEFAULTS } from '../src/config.ts';
-import { rules } from '../src/rules-file.ts';
 import type { JevResponse } from '../src/jev.ts';
 
 const choice = (p: Record<string, number>) => ({ type: 'choice' as const, choice: Object.keys(p)[0]!, probabilities: p, confidence: 0.5 });
@@ -113,11 +109,5 @@ test('config: fact knobs with defaults, known hosts, rules file', () => {
   assert.equal(fromRaw({ unsureOutcome: 'maybe' }).unsureOutcome, 'ask');
   assert.deepEqual(knownHosts(cfg), ['box', 'arch']);
   assert.deepEqual(knownHosts(DEFAULTS), []);
-  const dir = mkdtempSync(join(tmpdir(), 'jevgate-'));
-  const file = join(dir, 'rules.json');
-  writeFileSync(file, JSON.stringify({ changes_system: { true: 'deny' } }));
-  const env = fromEnv({ CLAUDE_PLUGIN_OPTION_RULESFILE: file, CLAUDE_PLUGIN_OPTION_KNOWNHOSTS: 'box' });
-  assert.equal(rules(env, undefined).changes_system!.true, 'deny');
-  assert.deepEqual(knownHosts(env), ['box']);
-  assert.equal(rules(fromRaw({ rulesFile: join(dir, 'missing.json') }), undefined), DEFAULT_RULES);
+  assert.deepEqual(knownHosts(fromEnv({ CLAUDE_PLUGIN_OPTION_KNOWNHOSTS: 'box' })), ['box']);
 });

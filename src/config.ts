@@ -7,7 +7,6 @@ export type Config = {
   timeoutMs: number;
   /** The full decisions log (commands, paths, Jev's facts); the stats the UI reads are kept either way. */
   log: boolean;
-  logPath?: string;
 
   bashEnabled: boolean;
   bashRecentTurns: number;
@@ -123,7 +122,6 @@ export function fromRaw(raw: Raw): Config {
     model: str(raw.model) ?? d.model,
     timeoutMs: num(raw.timeoutMs, d.timeoutMs),
     log: bool(raw.log, d.log),
-    logPath: str(raw.logPath),
 
     bashEnabled: bool(raw.bashEnabled, d.bashEnabled),
     bashRecentTurns: num(raw.bashRecentTurns, d.bashRecentTurns),
@@ -171,7 +169,6 @@ export function fromEnv(env: Record<string, string | undefined>): Config {
     if (v !== undefined) raw[key] = v;
   }
   if (env[OPTION_PREFIX + 'APIKEY']) raw.apiKey = env[OPTION_PREFIX + 'APIKEY'];
-  if (env[OPTION_PREFIX + 'LOGPATH']) raw.logPath = env[OPTION_PREFIX + 'LOGPATH'];
   if (env[OPTION_PREFIX + 'RULESFILE']) raw.rulesFile = env[OPTION_PREFIX + 'RULESFILE'];
   const cfg = fromRaw(raw);
   cfg.apiKey = cfg.apiKey ?? env.TYPESAFE_API_KEY;
@@ -186,7 +183,13 @@ export function knownHosts(cfg: Config): string[] {
   return cfg.knownHosts.split(',').map((h) => h.trim()).filter(Boolean);
 }
 
-/** Where the command hooks keep stats.jsonl, the full log by default, and the done-check's counters. */
-export function dataDir(env: Record<string, string | undefined>): string {
-  return env.CLAUDE_PLUGIN_DATA ?? `${env.HOME ?? '.'}/.claude/jevgate`;
+/**
+ * The plugin's data dir, which Claude Code hands command hooks as CLAUDE_PLUGIN_DATA
+ * and the module not at all: `data/<name>-<marketplace>` for an installed plugin
+ * (its root under `cache/<marketplace>/<name>/`), `data/<name>-inline` for a `--plugin-dir` one.
+ */
+export function dataDirOf(root: string, name: string, home: string): string {
+  const m = /\/\.claude\/plugins\/cache\/([^/]+)\/([^/]+)\//.exec(root.endsWith('/') ? root : root + '/');
+  const base = `${home}/.claude/plugins/data`;
+  return m && m[2] === name ? `${base}/${name}-${m[1]}` : `${base}/${name}-inline`;
 }

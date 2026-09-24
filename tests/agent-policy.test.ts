@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildState, decide, denyOutput } from '../src/agent-policy.ts';
+import { buildState, decide } from '../src/agent-policy.ts';
 import type { JevResponse } from '../src/jev.ts';
 
 const res = (p: number): JevResponse => ({ model: 'j', answers: { in_context: { type: 'noul', noul: p } } });
@@ -17,8 +17,3 @@ test('denies only at or above threshold', () => {
   assert.equal(decide(res(0.94), 0.95).action, 'pass');
 });
 
-test('denyOutput matches the PreToolUse contract', () => {
-  const o = denyOutput('r');
-  assert.equal(o.hookSpecificOutput.permissionDecision, 'deny');
-  assert.equal(o.hookSpecificOutput.permissionDecisionReason, 'r');
-});

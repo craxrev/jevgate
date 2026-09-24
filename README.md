@@ -147,11 +147,11 @@ none / live_reversible / public_permanent, and yes/no for `changes_system`,
 `rewrites_history`, `uploads_data`, `exposes_secret`, and `requested` (its
 `false` asks by default; not asked for also turns an ask into a deny).
 
-Logs live in `~/.claude/plugins/data/jevgate*/`, owner-only:
+Logs live in `~/.claude/jevgate/`, owner-only (before 0.5.2 in `~/.claude/plugins/data/jevgate*/`, still read):
 
 - `stats.jsonl`: one line per decision with what the footer, the row lines and `/jevgate` need (outcome, flags, timings, session), never commands, paths or prompts. Always on.
 - `decisions-v2.jsonl`: every decision in full, including the command or path and Jev's facts, scores and gateway responses. Only with the `log` option on.
-- `~/.claude/jevgate/run/`: one file per call being judged, gone once Claude Code has the answer (see below).
+- `run/`: one file per call being judged, gone once Claude Code has the answer (see below).
 - `ui.jsonl`: answers and compactions from 0.4.8 to 0.4.10, still read for the counts.
 
 <details>

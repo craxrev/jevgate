@@ -171,10 +171,10 @@ test('/clear drops the snooze: the new conversation is asked at compactAtPercent
 test('the module appends to stats.jsonl in the order it logged, even when two land at once', async () => {
   const h = harness([CANCEL, CANCEL], { value: 30 });
   await Promise.all([h.compact('manual'), h.compact('manual')]);
-  const path = '/h/.claude/plugins/data/jevgate-jevgate/stats.jsonl';
+  const path = '/h/.claude/jevgate/stats.jsonl';
   const lines = h.files.get(path)!.trim().split('\n').map((l) => JSON.parse(l));
   assert.deepEqual(lines.map((l) => [l.feature, l.action, l.session]), [['compact', 'cancelled', 's'], ['compact', 'cancelled', 's']]);
-  assert.equal(h.files.has('/h/.claude/plugins/data/jevgate-jevgate/ui.jsonl'), false);
+  assert.equal(h.files.has('/h/.claude/jevgate/ui.jsonl'), false);
 });
 
 test('an interrupted trim stops waiting on Jev, whose fetch has no signal', async () => {
@@ -217,7 +217,7 @@ function jevFake(over: { coverage?: number; inContext?: number } = {}) {
     return { status: 200, ok: true, text: JSON.stringify({ model: 'j', answers }), headers: {} };
   };
 }
-const DATA = '/h/.claude/plugins/data/jevgate-jevgate';
+const DATA = '/h/.claude/jevgate';
 const RUN = '/h/.claude/jevgate/run';
 
 test('a guarded call: the verdict and its match are written before the call goes on, then logged', async () => {

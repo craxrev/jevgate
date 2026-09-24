@@ -13,7 +13,7 @@
 // Everything UI is best-effort and must never break the hooks it decorates.
 // The validator follows `$` only within this file, so all of it lives here.
 import type { EngineInterface, On, PluginOptions, Register, RenderElement, SessionMessage } from 'claude-code';
-import { dataDirOf, fromRaw, type Config } from '../src/config.ts';
+import { fromRaw, type Config } from '../src/config.ts';
 import { logLines, type Decision } from '../src/log.ts';
 import { CANCEL, LATER, SUMMARY, TRIM, choiceOf, snoozeTo, type CompactChoice } from '../src/compact-ask.ts';
 import { ask, JevTransientError, type FetchLike } from '../src/jev.ts';
@@ -116,9 +116,9 @@ function toSession(input: readonly SessionMessage[], output: readonly Msg[]): Se
   return output.map((m) => (own.has(m) ? (m as SessionMessage) : (m as SessionMessage)));
 }
 
-/** Where this module logs: the plugin's data dir as far as the module can tell (Claude Code does not say). */
+/** Where jevgate keeps its logs, fixed: the module cannot learn the plugin data dir, and a guess is wrong for some installs. */
 async function ownDataDir($: Host): Promise<string> {
-  return dataDirOf($.plugin.root, $.plugin.name, (await $.env.get('HOME')) ?? '');
+  return `${(await $.env.get('HOME')) ?? ''}/.claude/jevgate`;
 }
 
 /** Prepared once per load: made owner-only, files older than an hour dropped. */
@@ -131,7 +131,7 @@ let runReady: Promise<string> | undefined;
  */
 function runDir($: Host): Promise<string> {
   runReady ??= (async () => {
-    const dir = `${(await $.env.get('HOME')) ?? ''}/.claude/jevgate/run`;
+    const dir = `${await ownDataDir($)}/run`;
     await $.process.run(
       ['sh', '-c', 'umask 077; mkdir -p "$1/verdicts" "$1/pending" && chmod 700 "$1" "$1/verdicts" "$1/pending" && find "$1" -type f -mmin +60 -delete', 'jevgate', dir],
       { timeoutMs: 5000 },
@@ -143,8 +143,8 @@ function runDir($: Host): Promise<string> {
 
 async function dataDirs($: Host): Promise<string[]> {
   const home = (await $.env.get('HOME')) ?? '';
-  // older logs: `jevgate-jevgate` when installed, `jevgate-inline` under --plugin-dir, `~/.claude/jevgate` before either
-  const dirs = [await ownDataDir($), `${home}/.claude/plugins/data/jevgate-jevgate`, `${home}/.claude/plugins/data/jevgate-inline`, `${home}/.claude/jevgate`];
+  // before 0.5.2 the logs sat in the plugin data dir: `jevgate-jevgate` installed, `jevgate-inline` under --plugin-dir
+  const dirs = [await ownDataDir($), `${home}/.claude/plugins/data/jevgate-jevgate`, `${home}/.claude/plugins/data/jevgate-inline`];
   return [...new Set(dirs)];
 }
 

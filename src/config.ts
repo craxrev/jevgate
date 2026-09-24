@@ -182,14 +182,3 @@ export function thresholds(cfg: Config): Thresholds {
 export function knownHosts(cfg: Config): string[] {
   return cfg.knownHosts.split(',').map((h) => h.trim()).filter(Boolean);
 }
-
-/**
- * The plugin's data dir, which Claude Code hands command hooks as CLAUDE_PLUGIN_DATA
- * and the module not at all: `data/<name>-<marketplace>` for an installed plugin
- * (its root under `cache/<marketplace>/<name>/`), `data/<name>-inline` for a `--plugin-dir` one.
- */
-export function dataDirOf(root: string, name: string, home: string): string {
-  const m = /\/\.claude\/plugins\/cache\/([^/]+)\/([^/]+)\//.exec(root.endsWith('/') ? root : root + '/');
-  const base = `${home}/.claude/plugins/data`;
-  return m && m[2] === name ? `${base}/${name}-${m[1]}` : `${base}/${name}-inline`;
-}

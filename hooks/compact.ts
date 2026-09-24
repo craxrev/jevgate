@@ -136,6 +136,17 @@ function appendDecision($: Host, entry: Record<string, unknown>, near?: string):
 
 const GUARDED = new Set(['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read']);
 
+const GUARDED_TOOL = new RegExp(`^(${[...GUARDED].join('|')})$`);
+
+/** Rejects once `signal` aborts: raced against a wait that cannot be cancelled itself. */
+function abandoned(signal: AbortSignal): Promise<never> {
+  return new Promise((_, reject) => {
+    const stop = () => reject(new Error('compaction abandoned'));
+    if (signal.aborted) stop();
+    else signal.addEventListener('abort', stop, { once: true });
+  });
+}
+
 /** Mutable UI state for one load of the module. */
 type UiRuntime = {
   compactions: CompactionReport[];
@@ -218,18 +229,18 @@ export const register: Register = (on: On, options: PluginOptions) => {
     else if (e.trigger === 'manual') {
       choice = choiceOf(await $.ui.ask('Compact how?', { header: 'Compact', options: [TRIM, SUMMARY, CANCEL] }).catch(() => undefined));
       if (choice === 'none') {
-        void appendDecision($, { feature: 'compact', action: 'cancelled', session, trigger: e.trigger });
+        await appendDecision($, { feature: 'compact', action: 'cancelled', session, trigger: e.trigger });
         return { skip: 'jevgate: compaction cancelled' };
       }
     }
     if (choice === 'summary') {
-      void appendDecision($, { feature: 'compact', action: 'summary', session, trigger: e.trigger, messages: e.messages.length, reason: e.instructions?.trim() ? 'instructions' : 'chosen' });
+      await appendDecision($, { feature: 'compact', action: 'summary', session, trigger: e.trigger, messages: e.messages.length, reason: e.instructions?.trim() ? 'instructions' : 'chosen' });
       return next(e);
     }
 
     const rank: Record<string, unknown> = {};
-    const bail = (why: string) => {
-      void appendDecision($, { feature: 'compact', action: 'kept-as-is', session, trigger: e.trigger, messages: e.messages.length, reason: why, ...rank, ms: Date.now() - t0 });
+    const bail = async (why: string) => {
+      await appendDecision($, { feature: 'compact', action: 'kept-as-is', session, trigger: e.trigger, messages: e.messages.length, reason: why, ...rank, ms: Date.now() - t0 });
       $.ui.toast(`jevgate: ${why}, conversation kept as is`, { timeoutMs: 8000 });
       return { skip: `jevgate: ${why}` };
     };
@@ -255,7 +266,8 @@ export const register: Register = (on: On, options: PluginOptions) => {
           rank.jev_body_chars = JSON.stringify({ state, questions }).length;
           rank.ranked = ranked.length;
           const tJev = Date.now();
-          const res = await ask(hostFetch($), { apiKey, model: cfg.model }, state, questions);
+          // `$.http.fetch` takes no signal: the request runs on, but an abandoned compaction stops waiting for it
+          const res = await Promise.race([ask(hostFetch($), { apiKey, model: cfg.model }, state, questions), abandoned(next.signal)]);
           rank.jev_ms = Date.now() - tJev;
           const r = rankScores(res, ranked, cfg.compactRestoreMinConfidence);
           for (const [id, s] of r.scores) scores.set(id, s);
@@ -283,7 +295,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
       const summary = `${truncate.size} truncated, ${restored} restored, ${Math.round(ratio * 100)}% smaller, ${ms}ms`;
       if (ratio < cfg.compactMinReductionRatio) return bail(`only ${summary}`);
       $.ui.toast(`jevgate: kept all ${out.length} messages, no summary (${summary})`, { timeoutMs: 8000 });
-      void appendDecision($, {
+      await appendDecision($, {
         feature: 'compact', action: 'verbatim', session, trigger: e.trigger, messages: out.length,
         candidates: cands.length, truncated: truncate.size, restored, ratio: Math.round(ratio * 1000) / 1000,
         chars_before: messages.reduce((a, m) => a + m.text.length + (m.toolResults ?? []).reduce((b, r) => b + r.text.length, 0), 0),
@@ -391,22 +403,26 @@ export const register: Register = (on: On, options: PluginOptions) => {
   });
 
   // After each guarded call settles, the gate's log entry exists: tick the footer now, not at turn end.
-  on('tool.call', async ($, e, next) => {
+  // On a timer, so the model gets the tool's result without waiting on the logs.
+  on('tool.call', { tool: GUARDED_TOOL }, async ($, e, next) => {
     const result = await next(e);
-    await refresh($, ui);
-    try {
-      // an asked call settles once you answered the prompt
-      const answer = rowCache.get(e.tool_use_id)?.startsWith('? ') ? askAnswer(result) : undefined;
-      if (answer) {
-        const session = await $.session.id();
-        await appendDecision($, { feature: e.tool === 'Bash' ? 'bash' : 'file', action: answer, session, tool_use_id: e.tool_use_id }, `"tool_use_id":"${e.tool_use_id}"`);
+    $.clock.after(1, async () => {
+      try {
         await refresh($, ui);
+        // an asked call settles once you answered the prompt
+        const answer = rowCache.get(e.tool_use_id)?.startsWith('? ') ? askAnswer(result) : undefined;
+        if (answer) {
+          const session = await $.session.id();
+          await appendDecision($, { feature: e.tool === 'Bash' ? 'bash' : 'file', action: answer, session, tool_use_id: e.tool_use_id }, `"tool_use_id":"${e.tool_use_id}"`);
+          await refresh($, ui);
+        }
+      } catch {
+        // decoration
       }
-    } catch {
-      // decoration
-    }
+    });
     return result;
   });
+
 
   on('turn.complete', async ($, e, next) => {
     if (!e.agentId) {
@@ -429,7 +445,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
         snoozeUntil = snoozeTo(pct);
         if (c === 'none') {
           const session = await $.session.id().catch(() => undefined);
-          void appendDecision($, { feature: 'compact', action: 'snoozed', session, trigger: 'plugin', percent: Math.round(pct), until: snoozeUntil });
+          await appendDecision($, { feature: 'compact', action: 'snoozed', session, trigger: 'plugin', percent: Math.round(pct), until: snoozeUntil });
           $.ui.toast(`jevgate: asking again at ${snoozeUntil}%`, { timeoutMs: 6000 });
         } else {
           chosen = c;

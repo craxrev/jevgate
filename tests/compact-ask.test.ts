@@ -21,7 +21,9 @@ test('snoozeTo is the next 10% step', () => {
 type Handler = ($: unknown, e: Record<string, unknown>, next: (e: unknown) => unknown) => Promise<unknown>;
 
 /** The module registered against a fake engine: `answers` are what the dialog returns in turn (undefined = Esc). */
-function harness(answers: (string | undefined)[], percent: { value: number }) {
+type Extra = { useJev?: boolean; fetch?: () => Promise<unknown> };
+
+function harness(answers: (string | undefined)[], percent: { value: number }, extra: Extra = {}) {
   const handlers = new Map<string, Handler>();
   const on = (name: string, a: unknown, b?: unknown) => {
     const h = (typeof a === 'function' ? a : b) as Handler;
@@ -30,6 +32,8 @@ function harness(answers: (string | undefined)[], percent: { value: number }) {
   const asked: string[] = [];
   const nexts: string[] = [];
   const files = new Map<string, string>();
+  const timers: (() => unknown)[] = [];
+  let reads = 0;
   const $ = {
     session: {
       id: async () => 's',
@@ -49,17 +53,20 @@ function harness(answers: (string | undefined)[], percent: { value: number }) {
     env: { get: async (k: string) => (k === 'HOME' ? '/h' : undefined) },
     fs: {
       exists: async (p: string) => files.has(p),
-      read: async (p: string) => files.get(p) ?? '',
+      read: async (p: string) => (reads++, files.get(p) ?? ''),
       // yields first, so two unchained rewrites would both read the same old text
       write: async (p: string, t: string) => { await new Promise((r) => setTimeout(r, 5)); files.set(p, t); },
     },
-    settings: { read: async () => ({}) },
+    settings: { read: async () => ({ env: { TYPESAFE_API_KEY: 'k' } }) },
+    http: { fetch: extra.fetch ?? (async () => ({ status: 500, ok: false, text: '' })) },
+    clock: { after: (_ms: number, fn: () => unknown) => (timers.push(fn), { cancel: () => {} }), every: () => ({ cancel: () => {} }) },
   };
-  register(on as never, { compactUseJev: false } as never);
+  register(on as never, { compactUseJev: extra.useJev ?? false } as never);
   const compact = (trigger: string, instructions?: string) => handlers.get('session.compact')!($, { trigger, messages: [], instructions }, () => { nexts.push(trigger); return { messages: [] }; });
   const turn = (agentId?: string) => handlers.get('turn.complete')!($, { agentId }, () => undefined);
   const end = (reason: string) => handlers.get('session.end')!($, { reason }, () => undefined);
-  return { compact, turn, end, asked, nexts, files };
+  const handler = (name: string) => handlers.get(name)!;
+  return { $, compact, turn, end, handler, asked, nexts, files, timers, reads: () => reads };
 }
 
 test('/compact asks; Cancel and Esc keep the conversation, the summary hands to Claude Code', async () => {
@@ -134,4 +141,30 @@ test('the module writes only ui.jsonl, one line per entry even when two land at 
   assert.deepEqual([...h.files.keys()], [path]);
   const lines = h.files.get(path)!.trim().split('\n').map((l) => JSON.parse(l));
   assert.deepEqual(lines.map((l) => [l.feature, l.action, l.session]), [['compact', 'cancelled', 's'], ['compact', 'cancelled', 's']]);
+});
+
+test('an interrupted trim stops waiting on Jev, whose fetch has no signal', async () => {
+  const h = harness([TRIM], { value: 30 }, { useJev: true, fetch: () => new Promise(() => {}) });
+  const msgs = Array.from({ length: 10 }, (_, i) => [
+    { role: 'assistant', text: '', toolUses: [{ tool_use_id: `t${i}`, tool: 'Bash', input: { command: `c${i}` }, text: '' }] },
+    { role: 'user', text: '', toolUses: [], toolResults: [{ tool_use_id: `t${i}`, text: 'x'.repeat(5000), isError: false }] },
+  ]).flat();
+  const ctl = new AbortController();
+  const next = Object.assign(() => ({ messages: [] }), { signal: ctl.signal });
+  setTimeout(() => ctl.abort(), 30);
+  const t = Date.now();
+  const r = (await h.handler('session.compact')(h.$, { trigger: 'manual', messages: msgs }, next as never)) as { messages?: unknown[] };
+  assert.ok(Date.now() - t < 1000, 'still waiting on the fetch');
+  assert.equal(r.messages?.length, msgs.length);
+});
+
+test("a guarded tool's result comes back before the logs are read", async () => {
+  const h = harness([], { value: 30 });
+  const result = { result: 'ok' };
+  const before = h.reads();
+  const r = await h.handler('tool.call')(h.$, { tool: 'Bash', tool_use_id: 'x' }, () => result);
+  assert.equal(r, result);
+  assert.equal(h.reads(), before);
+  assert.equal(h.timers.length, 1);
+  await h.timers[0]!();
 });

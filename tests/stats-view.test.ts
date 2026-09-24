@@ -48,7 +48,7 @@ test('statsLines fits the pane width and carries the styles', () => {
   assert.equal(chart.text.length, 1 + 30, 'the chart spans the pane even with 3 calls');
   assert.match(chart.text, /^ ▁+\S{3}$/);
   assert.equal(chart.dimHead, 1 + 27, 'the empty stretch is drawn dim');
-  assert.ok(lines.some((l) => l.text === ' all-time avg 900ms'));
+  assert.ok(lines.some((l) => l.text === ' avg this session 900ms · all-time 900ms'));
   assert.equal(lines[lines.findIndex((l) => l.text === 'Your answers to asks') + 1]!.text, ' approved 2 · rejected 1');
   assert.ok(lines.some((l) => l.text === 'Asked by flag · all-time'));
   assert.ok(lines.some((l) => l.text.includes('deletes local_no_copy') && l.color === 'yellow'));

@@ -148,7 +148,7 @@ export function statsLines(v: StatsView): Line[] {
       out.push({ text: ` last call: Jev did not answer${s.lastCall.tries > 1 ? ` (${s.lastCall.tries} tries)` : ''}`, color: COLORS.unreachable });
     }
   }
-  if (a.avgMs) out.push({ text: ` all-time avg ${a.avgMs}ms`, dim: true });
+  if (s.avgMs || a.avgMs) out.push({ text: ` avg this session ${s.avgMs ? `${s.avgMs}ms` : '–'} · all-time ${a.avgMs}ms`, dim: true });
   out.push({ text: '' });
 
   const at = total(a);

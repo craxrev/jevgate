@@ -30,6 +30,8 @@ export type GateHost = {
   home?: string;
   /** `p`, or a rejection once `ms` passed. */
   timed: <T>(p: Promise<T>, ms: number) => Promise<T>;
+  /** No call to Jev has gone out on this load yet: this one opens the connection. */
+  cold?: boolean;
 };
 
 /** The verdict lines for answer.sh, and the log entry (absent when nothing is logged). */
@@ -65,18 +67,26 @@ async function judge(
   prepMs: number,
 ): Promise<GateOutcome> {
   const { cfg } = host;
-  const t1 = Date.now();
+  // Jev's own time, from its gateway; the rest of the wait is the network (and, cold, connecting)
+  let serverMs: number | undefined;
+  const fetch: FetchLike = async (url, init) => {
+    const r = await host.fetch(url, init);
+    const v = Number(r.headers?.['x-envoy-upstream-service-time']);
+    if (r.headers?.['x-envoy-upstream-service-time'] !== undefined && Number.isFinite(v)) serverMs = v;
+    return r;
+  };
+  const cold = host.cold ? { cold: true } : {};
   try {
-    const res = await host.timed(ask(host.fetch, { apiKey: host.apiKey!, model: cfg.model, retries: 0 }, state, questions), cfg.timeoutMs);
+    const res = await host.timed(ask(fetch, { apiKey: host.apiKey!, model: cfg.model, retries: 0 }, state, questions), cfg.timeoutMs);
     const rulesFile = await host.rulesFile();
     const { base, lines } = decided(resolveFacts(res, facts, thresholds(cfg)), rulesFile, cfg);
-    const timing = { prepMs, connectMs: 0, ms: Date.now() - t0, jevMs: Date.now() - t1 };
+    const timing = { prepMs, ms: Date.now() - t0, ...(serverMs !== undefined ? { serverMs } : {}), ...cold };
     const logged = { ...entry, facts: base.facts, scores: rawScores(res, facts), ...timing };
     const action = base.action === 'allow' ? 'allow' : base.action === 'ask' ? 'asked' : 'denied';
     return { lines, log: { ...logged, action, ...(base.action === 'allow' ? {} : { category: base.flags.join(', '), reason: base.reason }) } };
   } catch (err) {
     const blocked = err instanceof JevBlockedError;
-    const log = { ...entry, action: 'unreachable', ...(blocked ? { category: 'blocked' } : {}), error: String(err), ...blockedFields(err), prepMs, ms: Date.now() - t0 };
+    const log = { ...entry, action: 'unreachable', ...(blocked ? { category: 'blocked' } : {}), error: String(err), ...blockedFields(err), prepMs, ms: Date.now() - t0, ...cold };
     return { lines: blocked ? only('blocked', BLOCKED_REASON) : only('unreachable', UNREACHABLE_REASON), log };
   }
 }

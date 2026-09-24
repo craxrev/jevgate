@@ -75,10 +75,16 @@ async function resolveApiKey($: Host, cfg: Config): Promise<string | undefined> 
   return undefined;
 }
 
+/** Whether a call to Jev has come back on this load: the connection is open from then on. */
+let jevWarm = false;
+
 function hostFetch($: Host): FetchLike {
   return async (url, init) => {
     const r = await $.http.fetch(url, init);
-    return { status: r.status, ok: r.ok, text: r.text, headers: r.headers };
+    jevWarm = true;
+    // header names lowercased, as the gate looks them up
+    const headers = Object.fromEntries(Object.entries(r.headers).map(([k, v]) => [k.toLowerCase(), v]));
+    return { status: r.status, ok: r.ok, text: r.text, headers };
   };
 }
 
@@ -243,6 +249,7 @@ async function gateHost($: Host, st: GuardState): Promise<GateHost> {
     roots: await scopeRoots($),
     home: (await $.env.get('HOME')) ?? undefined,
     timed: (p, ms) => timed($, p, ms),
+    cold: !jevWarm,
   };
 }
 

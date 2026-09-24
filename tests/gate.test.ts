@@ -121,3 +121,14 @@ test('file guard: a write to the repo root from a subfolder session is judged', 
   const own = await judgeFile('Write', { file_path: '/private/tmp/claude-501/-repo-sub/s/scratchpad/n.txt', content: 'x' }, ids, h);
   assert.equal(own.lines[0]!.kind, 'free');
 });
+
+test("Jev's own time comes from its gateway header; the first call of a load is marked cold", async () => {
+  const withHeader: FetchLike = async (url, init) => ({ ...(await jev()(url, init)), headers: { 'x-envoy-upstream-service-time': '23' } });
+  const warm = await judgeBash('rm -rf build', ids, host({ fetch: withHeader }));
+  assert.equal(warm.log?.serverMs, 23);
+  assert.equal(warm.log?.cold, undefined);
+  assert.equal(warm.log?.connectMs, undefined);
+  const cold = await judgeBash('rm -rf build', ids, host({ cold: true }));
+  assert.equal(cold.log?.cold, true);
+  assert.equal(cold.log?.serverMs, undefined);
+});

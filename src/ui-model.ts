@@ -16,11 +16,12 @@ export type LogEntry = {
   scores?: Record<string, number>;
   facts?: Record<string, string>;
   ms?: number;
-  /** Jev call timing, see `Trace` in node-fetch.ts. */
+  /** Jev call timing. `connectMs` is 0.4's (a connection per call); 0.5 keeps one open, and `cold` marks the call that opened it. */
   startMs?: number;
   prepMs?: number;
   connectMs?: number;
   serverMs?: number;
+  cold?: boolean;
   tries?: number;
   blocks?: number;
 };
@@ -152,12 +153,12 @@ export function kb(n: number): string {
 }
 
 /** One Jev call split by where its time went; `server` is missing when Jev did not answer. */
-export type Timing = { ms: number; prep: number; connect: number; server?: number; answered: boolean; tries: number };
+export type Timing = { ms: number; prep: number; connect: number; server?: number; answered: boolean; tries: number; cold?: boolean };
 
 export function timingOf(e: LogEntry): Timing | undefined {
   if (typeof e.ms !== 'number' || typeof e.prepMs !== 'number') return undefined;
   const answered = e.action !== 'unreachable' && e.action !== 'error';
-  return { ms: e.ms, prep: e.prepMs, connect: e.connectMs ?? 0, server: answered ? e.serverMs : undefined, answered, tries: e.tries ?? 1 };
+  return { ms: e.ms, prep: e.prepMs, connect: e.connectMs ?? 0, server: answered ? e.serverMs : undefined, answered, tries: e.tries ?? 1, ...(e.cold ? { cold: true } : {}) };
 }
 
 export type BashStats = {

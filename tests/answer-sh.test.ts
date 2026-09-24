@@ -11,8 +11,9 @@ const WARN = new URL('../hooks/warn.sh', import.meta.url).pathname;
 
 /** answer.sh on one call: `lines` is the module's verdict (undefined: none written). */
 function answer(mode: string | undefined, lines: VerdictLine[] | undefined, opts: { command?: string; judged?: string; id?: string } = {}) {
-  const data = mkdtempSync(join(tmpdir(), 'jevgate-answer-'));
-  mkdirSync(join(data, 'verdicts'));
+  const home = mkdtempSync(join(tmpdir(), 'jevgate-answer-'));
+  const data = join(home, '.claude', 'jevgate', 'run');
+  mkdirSync(join(data, 'verdicts'), { recursive: true });
   const id = opts.id ?? 'toolu_01Abc';
   const command = opts.command ?? 'git push --force origin "main"\nsecond line é';
   if (lines) {
@@ -20,7 +21,7 @@ function answer(mode: string | undefined, lines: VerdictLine[] | undefined, opts
     writeFileSync(join(data, 'verdicts', `${id}.match`), matchFragment('Bash', { command: opts.judged ?? command })!);
   }
   const input = JSON.stringify({ session_id: 's', ...(mode ? { permission_mode: mode } : {}), hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command, description: 'd' }, tool_use_id: id });
-  const r = spawnSync('sh', [SCRIPT], { input, encoding: 'utf8', env: { ...process.env, CLAUDE_PLUGIN_DATA: data } });
+  const r = spawnSync('sh', [SCRIPT], { input, encoding: 'utf8', env: { ...process.env, HOME: home, CLAUDE_PLUGIN_DATA: '/elsewhere' } });
   assert.equal(r.status, 0);
   const out = r.stdout ? (JSON.parse(r.stdout) as { hookSpecificOutput: { permissionDecision: string; permissionDecisionReason: string } }).hookSpecificOutput : undefined;
   return { decision: out?.permissionDecision, reason: out?.permissionDecisionReason, left: existsSync(join(data, 'verdicts', id)) };
@@ -82,11 +83,12 @@ test('warn.sh speaks only when function hooks are off', () => {
 const SLIPS = new URL('../hooks/slips.sh', import.meta.url).pathname;
 
 test('a free call is noted for the slip check, with its transcript and tool', () => {
-  const data = mkdtempSync(join(tmpdir(), 'jevgate-note-'));
-  mkdirSync(join(data, 'verdicts'));
+  const home = mkdtempSync(join(tmpdir(), 'jevgate-note-'));
+  const data = join(home, '.claude', 'jevgate', 'run');
+  mkdirSync(join(data, 'verdicts'), { recursive: true });
   writeFileSync(join(data, 'verdicts', 'toolu_F'), verdictText([{ mode: '*', kind: 'free', reason: '' }]));
   const input = JSON.stringify({ session_id: 'sess-1', transcript_path: '/t/s.jsonl', permission_mode: 'auto', tool_name: 'Bash', tool_input: { command: 'ls' }, tool_use_id: 'toolu_F' });
-  spawnSync('sh', [SCRIPT], { input, encoding: 'utf8', env: { ...process.env, CLAUDE_PLUGIN_DATA: data } });
+  spawnSync('sh', [SCRIPT], { input, encoding: 'utf8', env: { ...process.env, HOME: home, CLAUDE_PLUGIN_DATA: '/elsewhere' } });
   assert.equal(readFileSync(join(data, 'pending', 'sess-1'), 'utf8'), 'toolu_F\t/t/s.jsonl\tBash\t0\n');
 });
 

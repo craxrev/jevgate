@@ -1,6 +1,6 @@
 #!/bin/sh
 # PreToolUse for the guarded tools. The jevgate module judged this call in its
-# tool.call hook, which runs first, and left verdicts/<tool_use_id>: a line per
+# tool.call hook, which runs first, and left ~/.claude/jevgate/run/verdicts/<tool_use_id>: a line per
 # permission mode, `<mode><TAB><kind><TAB><reason as JSON>`, `*` for the rest.
 # Answering here, not from the module, makes an ask Claude Code's own prompt.
 # No verdict (the module is off or failed): refused where nothing else would
@@ -18,12 +18,12 @@ noteFree() {
   s=$(field session_id) t=$(field transcript_path) tool=$(field tool_name)
   case $s in ''|*[!A-Za-z0-9_-]*) return;; esac
   [ -n "$t" ] || return
-  p="${CLAUDE_PLUGIN_DATA:-$HOME/.claude/jevgate}/pending"
+  p="$HOME/.claude/jevgate/run/pending"
   [ -d "$p" ] || mkdir -p "$p"
   printf '%s\t%s\t%s\t0\n' "$id" "$t" "$tool" >> "$p/$s"
 }
 case $id in ''|*[!A-Za-z0-9_-]*) refuse '"jevgate: no tool_use_id to find a verdict by, refusing to run unguarded."';; esac
-f="${CLAUDE_PLUGIN_DATA:-$HOME/.claude/jevgate}/verdicts/$id"
+f="$HOME/.claude/jevgate/run/verdicts/$id"
 [ -f "$f" ] || refuse '"jevgate: the jevgate module did not judge this call (are function hooks on?), refusing to run unguarded."'
 if [ -f "$f.match" ] && ! printf '%s' "$in" | grep -F -q -f "$f.match"; then
   rm -f "$f" "$f.match"

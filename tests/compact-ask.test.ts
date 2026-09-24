@@ -23,6 +23,8 @@ type Handler = ($: unknown, e: Record<string, unknown>, next: (e: unknown) => un
 /** The module registered against a fake engine: `answers` are what the dialog returns in turn (undefined = Esc). */
 type Extra = {
   useJev?: boolean;
+  /** Where the plugin runs from: the cache for a marketplace install, any folder for a directory marketplace or --plugin-dir. */
+  root?: string;
   fetch?: (url: string, init: { body: string }) => Promise<unknown>;
   /** A program's result for `$.process.run` (appends are handled apart). */
   run?: (argv: string[]) => { exitCode: number; stdout: string } | undefined;
@@ -74,7 +76,7 @@ function harness(answers: (string | undefined)[], percent: { value: number }, ex
     },
     settings: { read: async () => ({ env: { TYPESAFE_API_KEY: 'k' } }) },
     http: { fetch: extra.fetch ?? (async () => ({ status: 500, ok: false, text: '', headers: {} })) },
-    plugin: { root: '/h/.claude/plugins/cache/jevgate/jevgate/0.5.0', name: 'jevgate' },
+    plugin: { root: extra.root ?? '/h/.claude/plugins/cache/jevgate/jevgate/0.5.0', name: 'jevgate' },
     process: {
       // appends (`sh -c 'cat >> "$1"' jevgate <path>`) land in `files`; anything else succeeds empty
       run: async (argv: string[], init?: { stdin?: string }) => {
@@ -216,17 +218,18 @@ function jevFake(over: { coverage?: number; inContext?: number } = {}) {
   };
 }
 const DATA = '/h/.claude/plugins/data/jevgate-jevgate';
+const RUN = '/h/.claude/jevgate/run';
 
 test('a guarded call: the verdict and its match are written before the call goes on, then logged', async () => {
   const h = harness([], { value: 30 }, { fetch: jevFake() });
   let seen: string | undefined;
   const r = await h.handler('tool.call', 'Bash')(h.$, { tool: 'Bash', tool_use_id: 'toolu_9', command: 'rm -rf build' }, () => {
-    seen = h.files.get(`${DATA}/verdicts/toolu_9`);
+    seen = h.files.get(`${RUN}/verdicts/toolu_9`);
     return { result: 'ok' };
   });
   assert.deepEqual(r, { result: 'ok' });
   assert.equal(seen, '*\tallow\t"jevgate: nothing flagged"\n');
-  assert.equal(h.files.get(`${DATA}/verdicts/toolu_9.match`), '"command":"rm -rf build"');
+  assert.equal(h.files.get(`${RUN}/verdicts/toolu_9.match`), '"command":"rm -rf build"');
   await h.runTimers();
   const logged = h.files.get(`${DATA}/stats.jsonl`)!.trim().split('\n').map((l) => JSON.parse(l));
   assert.deepEqual(logged.map((l) => [l.feature, l.action, l.tool_use_id]), [['bash', 'allow', 'toolu_9']]);
@@ -287,10 +290,18 @@ test('the done-check is off unless switched on', async () => {
 });
 
 test("a turn's end logs the free calls slips.sh found judged by the classifier", async () => {
-  const run = (argv: string[]) => (String(argv[1]).endsWith('/hooks/slips.sh') && argv[2] === `${DATA}/pending/s` ? { exitCode: 0, stdout: 'toolu_Z\tBash\ntoolu_W\tWrite\n' } : undefined);
+  const run = (argv: string[]) => (String(argv[1]).endsWith('/hooks/slips.sh') && argv[2] === `${RUN}/pending/s` ? { exitCode: 0, stdout: 'toolu_Z\tBash\ntoolu_W\tWrite\n' } : undefined);
   const h = harness([], { value: 30 }, { run });
   await h.turn();
   await h.runTimers();
   const logged = h.files.get(`${DATA}/stats.jsonl`)!.trim().split('\n').map((l) => JSON.parse(l));
   assert.deepEqual(logged.map((l) => [l.feature, l.action, l.tool_use_id]), [['bash', 'slipped', 'toolu_Z'], ['file', 'slipped', 'toolu_W']]);
+});
+
+test('the verdict lands where answer.sh reads it, however the plugin is loaded', async () => {
+  for (const root of ['/h/.claude/plugins/cache/jevgate/jevgate/0.5.0', '/h/dev/jevgate']) {
+    const h = harness([], { value: 30 }, { fetch: jevFake(), root });
+    await h.handler('tool.call', 'Bash')(h.$, { tool: 'Bash', tool_use_id: 'toolu_R', command: 'rm -rf build' }, () => ({}));
+    assert.equal(h.files.get(`${RUN}/verdicts/toolu_R`), '*\tallow\t"jevgate: nothing flagged"\n', root);
+  }
 });

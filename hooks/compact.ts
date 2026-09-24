@@ -116,9 +116,29 @@ function toSession(input: readonly SessionMessage[], output: readonly Msg[]): Se
   return output.map((m) => (own.has(m) ? (m as SessionMessage) : (m as SessionMessage)));
 }
 
-/** The data dir Claude Code hands this plugin's command hooks, which answer.sh reads verdicts from. */
+/** Where this module logs: the plugin's data dir as far as the module can tell (Claude Code does not say). */
 async function ownDataDir($: Host): Promise<string> {
   return dataDirOf($.plugin.root, $.plugin.name, (await $.env.get('HOME')) ?? '');
+}
+
+/** Prepared once per load: made owner-only, files older than an hour dropped. */
+let runReady: Promise<string> | undefined;
+
+/**
+ * Where the module and the sh hooks hand over verdicts and pending free calls:
+ * a fixed place both work out from HOME. The plugin data dir is no good, since
+ * the module can only guess it, and a directory-marketplace install guesses wrong.
+ */
+function runDir($: Host): Promise<string> {
+  runReady ??= (async () => {
+    const dir = `${(await $.env.get('HOME')) ?? ''}/.claude/jevgate/run`;
+    await $.process.run(
+      ['sh', '-c', 'umask 077; mkdir -p "$1/verdicts" "$1/pending" && chmod 700 "$1" "$1/verdicts" "$1/pending" && find "$1" -type f -mmin +60 -delete', 'jevgate', dir],
+      { timeoutMs: 5000 },
+    );
+    return dir;
+  })();
+  return runReady;
 }
 
 async function dataDirs($: Host): Promise<string[]> {
@@ -252,7 +272,7 @@ async function gate($: Host, st: GuardState, e: { tool: string; tool_use_id: str
   const host = await gateHost($, st);
   const out = e.tool === 'Bash' ? await judgeBash(String(input.command ?? ''), ids, host) : await judgeFile(e.tool, input as FileInput, ids, host);
   if (safeId(e.tool_use_id)) {
-    const path = `${await ownDataDir($)}/verdicts/${e.tool_use_id}`;
+    const path = `${await runDir($)}/verdicts/${e.tool_use_id}`;
     const match = matchFragment(e.tool, input);
     // the match first: answer.sh never finds a verdict without it
     if (match) await $.fs.write(`${path}.match`, match);
@@ -288,7 +308,7 @@ async function agentGate($: Host, st: GuardState, input: { prompt?: string; suba
 async function logSlips($: Host): Promise<void> {
   const session = await $.session.id();
   if (!/^[A-Za-z0-9_-]+$/.test(session)) return;
-  const r = await $.process.run(['sh', `${$.plugin.root}/hooks/slips.sh`, `${await ownDataDir($)}/pending/${session}`], { timeoutMs: 10000 });
+  const r = await $.process.run(['sh', `${$.plugin.root}/hooks/slips.sh`, `${await runDir($)}/pending/${session}`], { timeoutMs: 10000 });
   for (const line of r.stdout.split('\n').filter(Boolean)) {
     const [id, tool] = line.split('\t');
     await appendDecision($, { feature: tool === 'Bash' ? 'bash' : 'file', action: 'slipped', session, tool_use_id: id });
@@ -518,11 +538,10 @@ export const register: Register = (on: On, options: PluginOptions) => {
 
   on('session.start', async ($, e, next) => {
     try {
-      // owner-only, and nothing left from a crashed session
-      const dir = `${await ownDataDir($)}/verdicts`;
-      await $.process.run(['sh', '-c', 'mkdir -p "$1" && chmod 700 "$1" && find "$1" -type f -mmin +60 -delete', 'jevgate', dir], { timeoutMs: 5000 });
+      await runDir($);
     } catch (err) {
-      $.ui.log(`verdicts dir not prepared (${err instanceof Error ? err.message : String(err)})`);
+      runReady = undefined;
+      $.ui.log(`handover dir not prepared (${err instanceof Error ? err.message : String(err)})`);
     }
     try {
       await $.command.register({ name: 'jevgate', description: 'jevgate guard tally: this session and all-time', immediate: true });

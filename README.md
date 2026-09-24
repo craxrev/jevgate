@@ -151,7 +151,7 @@ Logs live in `~/.claude/plugins/data/jevgate*/`, owner-only:
 
 - `stats.jsonl`: one line per decision with what the footer, the row lines and `/jevgate` need (outcome, flags, timings, session), never commands, paths or prompts. Always on.
 - `decisions-v2.jsonl`: every decision in full, including the command or path and Jev's facts, scores and gateway responses. Only with the `log` option on.
-- `verdicts/`: one file per call being judged, gone once Claude Code has the answer (see Failure below).
+- `~/.claude/jevgate/run/`: one file per call being judged, gone once Claude Code has the answer (see below).
 - `ui.jsonl`: answers and compactions from 0.4.8 to 0.4.10, still read for the counts.
 
 <details>

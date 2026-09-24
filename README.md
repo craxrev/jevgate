@@ -48,7 +48,7 @@ done-check blocks, subagents refused, compactions).
 
 `/jevgate` opens a panel. It refreshes while open.
 
-<img src="docs/jevgate-pane.png" alt="The /jevgate panel: bars per outcome for this session, Jev latency, where the time of a Jev call goes, all-time totals, asks by flag" width="520">
+<img src="docs/jevgate-pane.png" alt="The /jevgate panel: bars per outcome for this session, your answers to asks, Jev latency with the last call and average split into prep, network and Jev, all-time totals, denials and asks by flag" width="520">
 
 ## What it does
 

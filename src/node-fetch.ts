@@ -33,7 +33,9 @@ export function nodeFetch(timeoutMs: number, trace?: Trace): FetchLike {
       // the gateway's wait on Jev, the closest to Jev's own processing time
       const server = Number(r.headers.get('x-envoy-upstream-service-time'));
       if (trace && r.headers.has('x-envoy-upstream-service-time') && Number.isFinite(server)) trace.serverMs = server;
-      return { status: r.status, ok: r.ok, text: await r.text() };
+      const headers: Record<string, string> = {};
+      r.headers.forEach((v, k) => { if (k !== 'set-cookie') headers[k] = v; });
+      return { status: r.status, ok: r.ok, text: await r.text(), headers };
     } finally {
       clearTimeout(t);
       if (trace) {

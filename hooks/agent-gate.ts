@@ -1,10 +1,10 @@
 // PreToolUse(Agent): deny a subagent spawn when the answer is already in the
 // recent conversation. Silent otherwise.
 import { readStdinJson, emit } from '../src/stdin.ts';
-import { fromEnv, defaultLogPath } from '../src/config.ts';
+import { fromEnv } from '../src/config.ts';
 import { ask } from '../src/jev.ts';
 import { nodeFetch, newTrace, traceFields } from '../src/node-fetch.ts';
-import { appendLog } from '../src/log.ts';
+import { logger } from '../src/log.ts';
 import { readTranscript, recentTurns } from '../src/transcript.ts';
 import { buildState, QUESTIONS, decide, denyOutput } from '../src/agent-policy.ts';
 
@@ -15,7 +15,7 @@ type Input = {
 };
 
 const cfg = fromEnv(process.env);
-const logPath = cfg.logPath ?? defaultLogPath(process.env);
+const log = logger(process.env, cfg);
 
 async function main(): Promise<void> {
   if (!cfg.agentEnabled || !cfg.apiKey) return;
@@ -35,7 +35,7 @@ async function main(): Promise<void> {
     QUESTIONS,
   );
   const d = decide(res, cfg.agentThreshold);
-  appendLog(logPath, {
+  log({
     feature: 'agent',
     action: d.action,
     session: input.session_id,
@@ -49,5 +49,5 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  appendLog(logPath, { feature: 'agent', action: 'error', error: String(err) });
+  log({ feature: 'agent', action: 'error', error: String(err) });
 });

@@ -110,6 +110,7 @@ Set in `/plugin configure jevgate`. Every feature has its own switch.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
+| `log` | off | full decisions log (commands, paths, Jev's facts), see below |
 | `bashEnabled` | on | Bash guard |
 | `bashRecentTurns` | 8 | conversation turns Jev sees (more did not help on real sessions) |
 | `fileEnabled` | on | file guard |
@@ -145,7 +146,11 @@ none / live_reversible / public_permanent, and yes/no for `changes_system`,
 `rewrites_history`, `uploads_data`, `exposes_secret`, and `requested` (its
 `false` asks by default; not asked for also turns an ask into a deny).
 
-Every decision is logged as JSON lines in `~/.claude/plugins/data/jevgate*/decisions-v2.jsonl` (0.4 started a new file; the old `decisions.jsonl` is no longer read).
+Logs live in `~/.claude/plugins/data/jevgate*/`, owner-only:
+
+- `stats.jsonl`: one line per decision with what the footer, the row lines and `/jevgate` need (outcome, flags, timings, session), never commands, paths or prompts. Always on; the first 0.4.8 hook seeds it from an existing `decisions-v2.jsonl`, so all-time counts carry over.
+- `ui.jsonl`: your answers at asks and each compaction, written by the function-hook module (it can only rewrite whole files, so nothing else writes there).
+- `decisions-v2.jsonl`: every decision in full, including the command or path and Jev's facts, scores and gateway responses. Only with the `log` option on; `CLAUDE_PLUGIN_OPTION_LOGPATH` moves it.
 
 <details>
 <summary><b>How it decides</b></summary>

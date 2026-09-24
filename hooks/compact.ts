@@ -79,18 +79,23 @@ function toSession(input: readonly SessionMessage[], output: readonly Msg[]): Se
   return output.map((m) => (own.has(m) ? (m as SessionMessage) : (m as SessionMessage)));
 }
 
-async function logCandidates($: Host): Promise<string[]> {
+async function dataDirs($: Host): Promise<string[]> {
   const home = (await $.env.get('HOME')) ?? '';
   const data = await $.env.get('CLAUDE_PLUGIN_DATA');
   // the command hooks write to their plugin data dir: `jevgate-jevgate` when installed, `jevgate-inline` under --plugin-dir
   const dirs = [data, `${home}/.claude/plugins/data/jevgate-jevgate`, `${home}/.claude/plugins/data/jevgate-inline`, `${home}/.claude/jevgate`];
-  return [...new Set(dirs.filter((d): d is string => !!d).map((d) => `${d}/decisions-v2.jsonl`))];
+  return [...new Set(dirs.filter((d): d is string => !!d))];
 }
 
-/** The newest entries of every decisions log, merged oldest first. Missing logs = empty. */
+/** The gates append to stats.jsonl; this module writes only ui.jsonl, since `$.fs` can only rewrite a whole file. */
+async function logFiles($: Host): Promise<string[]> {
+  return (await dataDirs($)).flatMap((d) => [`${d}/stats.jsonl`, `${d}/ui.jsonl`]);
+}
+
+/** The newest entries of every stats and UI log, merged oldest first. Missing logs = empty. */
 async function readLog($: Host): Promise<LogEntry[]> {
   const out: LogEntry[] = [];
-  for (const p of await logCandidates($)) {
+  for (const p of await logFiles($)) {
     if (!(await $.fs.exists(p))) continue;
     let text = await $.fs.read(p);
     if (text.length > MAX_LOG_CHARS) text = text.slice(text.length - MAX_LOG_CHARS);
@@ -99,26 +104,34 @@ async function readLog($: Host): Promise<LogEntry[]> {
   return out.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
 }
 
-/** Appends one decision line to the same log the command hooks write. `$.fs` has no append, so read + write; best effort. */
-async function appendDecision($: Host, entry: Record<string, unknown>, near?: string): Promise<void> {
-  try {
-    // `near`: text of an entry this one belongs with; its log wins (the gates write where Claude Code's plugin data dir is)
-    let path: string | undefined;
-    let existing = '';
-    for (const p of await logCandidates($)) {
-      if (!(await $.fs.exists(p))) continue;
-      const text = await $.fs.read(p);
-      if (path === undefined || (near && text.includes(near))) {
-        path = p;
-        existing = text;
-        if (!near || text.includes(near)) break;
-      }
-    }
-    path ??= (await logCandidates($))[0]!;
-    await $.fs.write(path, existing + JSON.stringify({ ts: new Date().toISOString(), ...entry }) + '\n');
-  } catch (err) {
-    $.ui.log(`jevgate: could not log (${err instanceof Error ? err.message : String(err)})`);
+/** Next to the gates' stats.jsonl; `near`, text of a gate entry this one belongs with, picks the dir that has it. */
+async function uiLogPath($: Host, near?: string): Promise<string> {
+  let first: string | undefined;
+  for (const d of await dataDirs($)) {
+    const stats = `${d}/stats.jsonl`;
+    if (!(await $.fs.exists(stats))) continue;
+    if (!near || (await $.fs.read(stats)).includes(near)) return `${d}/ui.jsonl`;
+    first ??= `${d}/ui.jsonl`;
   }
+  return first ?? `${(await dataDirs($))[0]!}/ui.jsonl`;
+}
+
+/** Chains this module's rewrites of ui.jsonl, so two of them never read the same old text. */
+let uiWrites: Promise<void> = Promise.resolve();
+
+/** Appends one line to ui.jsonl. `$.fs` has no append, so read + write; best effort. */
+function appendDecision($: Host, entry: Record<string, unknown>, near?: string): Promise<void> {
+  const line = JSON.stringify({ ts: new Date().toISOString(), ...entry }) + '\n';
+  uiWrites = uiWrites.then(async () => {
+    try {
+      const path = await uiLogPath($, near);
+      const existing = (await $.fs.exists(path)) ? await $.fs.read(path) : '';
+      await $.fs.write(path, existing + line);
+    } catch (err) {
+      $.ui.log(`jevgate: could not log (${err instanceof Error ? err.message : String(err)})`);
+    }
+  });
+  return uiWrites;
 }
 
 const GUARDED = new Set(['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read']);
@@ -167,7 +180,7 @@ async function lineFor($: Host, ui: UiRuntime, id: string): Promise<string | und
 async function refresh($: Host, ui: UiRuntime): Promise<void> {
   try {
     const [entries, session] = await Promise.all([readLog($), $.session.id()]);
-    const label = footerLabel(tally(entries, session), ui.compactions.length);
+    const label = footerLabel(tally(entries, session));
     const rowsChanged = cacheRows(ui, entries);
     let changed = label !== ui.footer || rowsChanged;
     ui.footer = label;
@@ -303,6 +316,13 @@ export const register: Register = (on: On, options: PluginOptions) => {
     }
   });
 
+  // `/clear` and a resume go on under another session id, with no session.start: drop what belonged to the old one
+  on('session.end', async ($, e, next) => {
+    snoozeUntil = 0;
+    compactions.length = 0;
+    return next(e);
+  });
+
   on('session.start', async ($, e, next) => {
     try {
       await $.command.register({ name: 'jevgate', description: 'jevgate guard tally: this session and all-time', immediate: true });
@@ -357,7 +377,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
       ticker = $.clock.every(1000, () => {
         void (async () => {
           try {
-            const stamp = (await Promise.all((await logCandidates($)).map(async (p) => ((await $.fs.exists(p)) ? (await $.fs.stat(p)).mtimeMs : 0)))).join(',');
+            const stamp = (await Promise.all((await logFiles($)).map(async (p) => ((await $.fs.exists(p)) ? (await $.fs.stat(p)).mtimeMs : 0)))).join(',');
             if (stamp === seen) return;
             seen = stamp;
             await refresh($, ui);

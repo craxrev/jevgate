@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildRequest, parseResponse, noul, ask, estimateTokens, JevBlockedError, JevTransientError, type FetchLike } from '../src/jev.ts';
+import { buildRequest, parseResponse, noul, ask, estimateTokens, JevBlockedError, JevTransientError, blockedFields, type FetchLike } from '../src/jev.ts';
 
 test('buildRequest shapes the System One request', () => {
   const { url, init } = buildRequest({ apiKey: 'k' }, { a: 1 }, { q: { type: 'noul', instructions: 'x' } });
@@ -45,6 +45,17 @@ test('a gateway HTML 403 is a block, 429 and 5xx are transient', () => {
   assert.throws(() => parseResponse({ status: 403, ok: false, text: '{"detail":"bad key"}' }), (e) => !(e instanceof JevBlockedError));
   assert.throws(() => parseResponse({ status: 429, ok: false, text: '' }), JevTransientError);
   assert.throws(() => parseResponse({ status: 502, ok: false, text: '' }), JevTransientError);
+});
+
+test('a block keeps the start of the page and the headers for the log', () => {
+  const page = '<html>\n  <title>403 Forbidden</title>' + 'x'.repeat(500);
+  let err: unknown;
+  try { parseResponse({ status: 403, ok: false, text: page, headers: { server: 'envoy', 'x-request-id': 'r1' } }); } catch (e) { err = e; }
+  const f = blockedFields(err);
+  assert.equal(f.blockedBody?.length, 300);
+  assert.ok(f.blockedBody?.startsWith('<html> <title>403 Forbidden</title>'));
+  assert.deepEqual(f.blockedHeaders, { server: 'envoy', 'x-request-id': 'r1' });
+  assert.deepEqual(blockedFields(new Error('other')), {});
 });
 
 test('ask retries once after a transient failure, never after a block', async () => {

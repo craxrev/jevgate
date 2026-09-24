@@ -4,10 +4,10 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { readStdinJson, emit } from '../src/stdin.ts';
-import { fromEnv, defaultLogPath } from '../src/config.ts';
+import { fromEnv, dataDir } from '../src/config.ts';
 import { ask } from '../src/jev.ts';
 import { nodeFetch, newTrace, traceFields } from '../src/node-fetch.ts';
-import { appendLog } from '../src/log.ts';
+import { logger } from '../src/log.ts';
 import { readTranscript, latestUserPrompt, firstUserPrompt, turnToolUses } from '../src/transcript.ts';
 import { QUESTIONS, decide, blockOutput, nextCounter, turnChangedFiles, type Counter, type DoneState } from '../src/done-policy.ts';
 
@@ -21,7 +21,7 @@ type Input = {
 };
 
 const cfg = fromEnv(process.env);
-const logPath = cfg.logPath ?? defaultLogPath(process.env);
+const log = logger(process.env, cfg);
 
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 32 * 1024 * 1024 });
@@ -95,7 +95,7 @@ function collectDiff(cwd: string, maxChars: number): { diff: string; truncated: 
 }
 
 function counterPath(sessionId: string): string {
-  return `${dirname(logPath)}/state/${sessionId}.json`;
+  return `${dataDir(process.env)}/state/${sessionId}.json`;
 }
 
 function readCounter(sessionId: string): Counter | undefined {
@@ -125,7 +125,7 @@ async function main(): Promise<void> {
 
   const counter = nextCounter(readCounter(session), input.stop_hook_active === true);
   if (counter.blocks >= cfg.doneMaxBlocks) {
-    appendLog(logPath, { feature: 'done', action: 'cap-reached', session, blocks: counter.blocks });
+    log({ feature: 'done', action: 'cap-reached', session, blocks: counter.blocks });
     writeCounter(session, { blocks: 0 });
     emit({ systemMessage: `jevgate: done-check blocked ${counter.blocks}x, letting through.` });
     return;
@@ -138,7 +138,7 @@ async function main(): Promise<void> {
     // no transcript: judge as before
   }
   if (transcript && !turnChangedFiles(turnToolUses(transcript, input.prompt_id))) {
-    appendLog(logPath, { feature: 'done', action: 'skip-no-change', session });
+    log({ feature: 'done', action: 'skip-no-change', session });
     writeCounter(session, counter);
     return;
   }
@@ -146,7 +146,7 @@ async function main(): Promise<void> {
   const cwd = input.cwd ?? process.cwd();
   const collected = collectDiff(cwd, cfg.doneDiffMaxChars);
   if (!collected) {
-    appendLog(logPath, { feature: 'done', action: 'skip-no-diff', session });
+    log({ feature: 'done', action: 'skip-no-diff', session });
     writeCounter(session, counter);
     return;
   }
@@ -160,7 +160,7 @@ async function main(): Promise<void> {
     diff_truncated: collected.truncated,
   };
   if (!state.request_latest) {
-    appendLog(logPath, { feature: 'done', action: 'skip-no-request', session });
+    log({ feature: 'done', action: 'skip-no-request', session });
     return;
   }
 
@@ -168,7 +168,7 @@ async function main(): Promise<void> {
   const trace = newTrace();
   const res = await ask(nodeFetch(Math.max(cfg.timeoutMs, 8000), trace), { apiKey: cfg.apiKey, model: cfg.model }, state, QUESTIONS);
   const d = decide(res, { coverMin: cfg.doneCoverMin, claimsMin: cfg.doneClaimsMin, leftoverMax: cfg.doneLeftoverMax });
-  appendLog(logPath, {
+  log({
     feature: 'done',
     action: d.action,
     session,
@@ -187,5 +187,5 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  appendLog(logPath, { feature: 'done', action: 'error', error: String(err) });
+  log({ feature: 'done', action: 'error', error: String(err) });
 });

@@ -78,10 +78,10 @@ export function flagsOf(e: LogEntry): string[] {
   return c.split(', ').filter(Boolean).map((f) => (e.feature === 'file' ? 'file:' : '') + f);
 }
 /** Guard outcomes per session. `free` is silent and not counted in the footer; unreachable counts as denied there. */
-export type Tally = { free: number; allowed: number; asked: number; denied: number; blocks: number; agentDenies: number };
+export type Tally = { free: number; allowed: number; asked: number; denied: number; blocks: number; agentDenies: number; compactions: number };
 
 export function tally(entries: readonly LogEntry[], session: string): Tally {
-  const t: Tally = { free: 0, allowed: 0, asked: 0, denied: 0, blocks: 0, agentDenies: 0 };
+  const t: Tally = { free: 0, allowed: 0, asked: 0, denied: 0, blocks: 0, agentDenies: 0, compactions: 0 };
   for (const e of entries) {
     if (e.session !== session) continue;
     if (e.feature === 'bash' || e.feature === 'file') {
@@ -91,30 +91,31 @@ export function tally(entries: readonly LogEntry[], session: string): Tally {
       else if (e.action === 'denied' || e.action === 'unreachable') t.denied++;
     } else if (e.feature === 'done' && e.action === 'block') t.blocks++;
     else if (e.feature === 'agent' && e.action === 'deny') t.agentDenies++;
+    else if (e.feature === 'compact' && e.action === 'verbatim') t.compactions++;
   }
   return t;
 }
 
 /** Short form for the prompt footer's mode labels: `jev ✓5 ?2 ⊘1 ✗1 ⇢1 ⇊1`. */
-export function footerLabel(t: Tally, compactions: number): string | undefined {
+export function footerLabel(t: Tally): string | undefined {
   const parts: string[] = [];
   if (t.allowed) parts.push(`✓${t.allowed}`);
   if (t.asked) parts.push(`?${t.asked}`);
   if (t.denied) parts.push(`⊘${t.denied}`);
   if (t.blocks) parts.push(`✗${t.blocks}`);
   if (t.agentDenies) parts.push(`⇢${t.agentDenies}`);
-  if (compactions) parts.push(`⇊${compactions}`);
+  if (t.compactions) parts.push(`⇊${t.compactions}`);
   return parts.length ? `jev ${parts.join(' ')}` : undefined;
 }
 
-export function statusText(t: Tally, compactions: number): string | undefined {
+export function statusText(t: Tally): string | undefined {
   const parts: string[] = [];
   if (t.allowed) parts.push(`✓${t.allowed} allowed`);
   if (t.asked) parts.push(`?${t.asked} asked`);
   if (t.denied) parts.push(`⊘${t.denied} denied`);
   if (t.blocks) parts.push(`✗${t.blocks} done-check`);
   if (t.agentDenies) parts.push(`⇢${t.agentDenies} subagent`);
-  if (compactions) parts.push(`⇊${compactions} compact`);
+  if (t.compactions) parts.push(`⇊${t.compactions} compact`);
   return parts.length ? `jev ${parts.join(' · ')}` : undefined;
 }
 

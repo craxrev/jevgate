@@ -5,6 +5,8 @@ export type Config = {
   apiKey?: string;
   model: string;
   timeoutMs: number;
+  /** The full decisions log (commands, paths, Jev's facts); the stats the UI reads are kept either way. */
+  log: boolean;
   logPath?: string;
 
   bashEnabled: boolean;
@@ -52,6 +54,7 @@ export type Config = {
 export const DEFAULTS: Config = {
   model: 'jev-latest',
   timeoutMs: 4000,
+  log: false,
 
   bashEnabled: true,
   bashRecentTurns: 8,
@@ -119,6 +122,7 @@ export function fromRaw(raw: Raw): Config {
     apiKey: str(raw.apiKey),
     model: str(raw.model) ?? d.model,
     timeoutMs: num(raw.timeoutMs, d.timeoutMs),
+    log: bool(raw.log, d.log),
     logPath: str(raw.logPath),
 
     bashEnabled: bool(raw.bashEnabled, d.bashEnabled),
@@ -182,7 +186,7 @@ export function knownHosts(cfg: Config): string[] {
   return cfg.knownHosts.split(',').map((h) => h.trim()).filter(Boolean);
 }
 
-export function defaultLogPath(env: Record<string, string | undefined>): string {
-  const base = env.CLAUDE_PLUGIN_DATA ?? `${env.HOME ?? '.'}/.claude/jevgate`;
-  return `${base}/decisions-v2.jsonl`;
+/** Where the command hooks keep stats.jsonl, the full log by default, and the done-check's counters. */
+export function dataDir(env: Record<string, string | undefined>): string {
+  return env.CLAUDE_PLUGIN_DATA ?? `${env.HOME ?? '.'}/.claude/jevgate`;
 }

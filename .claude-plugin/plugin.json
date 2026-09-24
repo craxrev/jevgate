@@ -1,6 +1,6 @@
 {
   "name": "jevgate",
-  "version": "0.4.7",
+  "version": "0.4.8",
   "description": "Jev-backed gates for Claude Code: bash guard for bypass mode, file guard, done-check, subagent gate, verbatim compaction. Each feature toggles independently.",
   "license": "MIT",
   "author": {
@@ -18,6 +18,12 @@
       "title": "Jev model",
       "description": "TypeSafe model name.",
       "default": "jev-latest"
+    },
+    "log": {
+      "type": "boolean",
+      "title": "Full decisions log",
+      "description": "Also log every decision in full (commands, file paths, Jev's facts and scores) to decisions-v2.jsonl in the plugin data dir. The stats behind the footer and /jevgate are kept either way, without commands or paths.",
+      "default": false
     },
     "bashEnabled": {
       "type": "boolean",

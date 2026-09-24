@@ -29,6 +29,7 @@ function harness(answers: (string | undefined)[], percent: { value: number }) {
   };
   const asked: string[] = [];
   const nexts: string[] = [];
+  const files = new Map<string, string>();
   const $ = {
     session: {
       id: async () => 's',
@@ -45,14 +46,20 @@ function harness(answers: (string | undefined)[], percent: { value: number }) {
       },
       toast: () => {}, log: () => {}, invalidate: () => {}, open: async () => {},
     },
-    env: { get: async () => undefined },
-    fs: { exists: async () => false, read: async () => '', write: async () => {} },
+    env: { get: async (k: string) => (k === 'HOME' ? '/h' : undefined) },
+    fs: {
+      exists: async (p: string) => files.has(p),
+      read: async (p: string) => files.get(p) ?? '',
+      // yields first, so two unchained rewrites would both read the same old text
+      write: async (p: string, t: string) => { await new Promise((r) => setTimeout(r, 5)); files.set(p, t); },
+    },
     settings: { read: async () => ({}) },
   };
   register(on as never, { compactUseJev: false } as never);
   const compact = (trigger: string, instructions?: string) => handlers.get('session.compact')!($, { trigger, messages: [], instructions }, () => { nexts.push(trigger); return { messages: [] }; });
   const turn = (agentId?: string) => handlers.get('turn.complete')!($, { agentId }, () => undefined);
-  return { compact, turn, asked, nexts };
+  const end = (reason: string) => handlers.get('session.end')!($, { reason }, () => undefined);
+  return { compact, turn, end, asked, nexts, files };
 }
 
 test('/compact asks; Cancel and Esc keep the conversation, the summary hands to Claude Code', async () => {
@@ -105,4 +112,26 @@ test('/compact with instructions runs the summary without asking', async () => {
   const blank = harness([CANCEL], { value: 30 });
   await blank.compact('manual', '  ');
   assert.equal(blank.asked.length, 1, 'blank instructions still ask');
+});
+
+test('/clear drops the snooze: the new conversation is asked at compactAtPercent again', async () => {
+  const p = { value: 62 };
+  const h = harness([LATER, LATER], p);
+  await h.turn();
+  await h.turn();
+  assert.equal(h.asked.length, 1);
+  await h.end('clear');
+  await h.turn();
+  assert.equal(h.asked.length, 2);
+});
+
+test('the module writes only ui.jsonl, one line per entry even when two land at once', async () => {
+  const h = harness([CANCEL, CANCEL], { value: 30 });
+  await Promise.all([h.compact('manual'), h.compact('manual')]);
+  const path = '/h/.claude/plugins/data/jevgate-jevgate/ui.jsonl';
+  // writes queued by the tests before this one drain first: wait for ours
+  for (let i = 0; i < 200 && (h.files.get(path) ?? '').split('\n').length < 3; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.deepEqual([...h.files.keys()], [path]);
+  const lines = h.files.get(path)!.trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(lines.map((l) => [l.feature, l.action, l.session]), [['compact', 'cancelled', 's'], ['compact', 'cancelled', 's']]);
 });

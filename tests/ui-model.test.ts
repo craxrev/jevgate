@@ -13,29 +13,31 @@ const log = [
   { ts: 't', feature: 'file', action: 'denied', session: 's1', tool_use_id: 'f', category: 'exposes_secret', reason: 'jevgate: denied · exposes_secret (path holds credentials)' },
   { ts: 't', feature: 'bash', action: 'allow', session: 's0', tool_use_id: 'e', facts: {}, scores: {}, ms: 200 },
   { ts: 't', feature: 'done', action: 'block', session: 's1' },
+  { ts: 't', feature: 'compact', action: 'verbatim', session: 's1' },
+  { ts: 't', feature: 'compact', action: 'summary', session: 's1' },
   { ts: 't', feature: 'agent', action: 'deny', session: 's2' },
 ]
   .map((o) => JSON.stringify(o))
   .join('\n');
 
 test('parseLog skips junk lines', () => {
-  assert.equal(parseLog('garbage\n' + log + '\n{bad').length, 11);
+  assert.equal(parseLog('garbage\n' + log + '\n{bad').length, 13);
 });
 
 test('tally counts per session; free apart, unreachable counts as denied', () => {
-  assert.deepEqual(tally(parseLog(log), 's1'), { free: 1, allowed: 1, asked: 2, denied: 3, blocks: 1, agentDenies: 0 });
-  assert.deepEqual(tally(parseLog(log), 's0'), { free: 0, allowed: 1, asked: 0, denied: 0, blocks: 0, agentDenies: 0 });
+  assert.deepEqual(tally(parseLog(log), 's1'), { free: 1, allowed: 1, asked: 2, denied: 3, blocks: 1, agentDenies: 0, compactions: 1 });
+  assert.deepEqual(tally(parseLog(log), 's0'), { free: 0, allowed: 1, asked: 0, denied: 0, blocks: 0, agentDenies: 0, compactions: 0 });
   assert.equal(tally(parseLog(log), 's2').agentDenies, 1);
 });
 
 test('statusText is compact and empty when nothing happened', () => {
-  assert.equal(statusText({ free: 9, allowed: 0, asked: 0, denied: 0, blocks: 0, agentDenies: 0 }, 0), undefined);
-  assert.equal(statusText({ free: 9, allowed: 3, asked: 2, denied: 1, blocks: 0, agentDenies: 2 }, 2), 'jev ✓3 allowed · ?2 asked · ⊘1 denied · ⇢2 subagent · ⇊2 compact');
+  assert.equal(statusText({ free: 9, allowed: 0, asked: 0, denied: 0, blocks: 0, agentDenies: 0, compactions: 0 }), undefined);
+  assert.equal(statusText({ free: 9, allowed: 3, asked: 2, denied: 1, blocks: 0, agentDenies: 2, compactions: 2 }), 'jev ✓3 allowed · ?2 asked · ⊘1 denied · ⇢2 subagent · ⇊2 compact');
 });
 
 test('footerLabel is the short form; free commands do not show', () => {
-  assert.equal(footerLabel({ free: 4, allowed: 0, asked: 0, denied: 0, blocks: 0, agentDenies: 0 }, 0), undefined);
-  assert.equal(footerLabel({ free: 9, allowed: 5, asked: 1, denied: 2, blocks: 1, agentDenies: 1 }, 1), 'jev ✓5 ?1 ⊘2 ✗1 ⇢1 ⇊1');
+  assert.equal(footerLabel({ free: 4, allowed: 0, asked: 0, denied: 0, blocks: 0, agentDenies: 0, compactions: 0 }), undefined);
+  assert.equal(footerLabel({ free: 9, allowed: 5, asked: 1, denied: 2, blocks: 1, agentDenies: 1, compactions: 1 }), 'jev ✓5 ?1 ⊘2 ✗1 ⇢1 ⇊1');
 });
 
 test('bashRowText: one dim line per judged call, nothing for free ones', () => {

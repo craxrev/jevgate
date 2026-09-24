@@ -46,7 +46,7 @@ export type JevResponse = {
 };
 
 export type FetchInit = { method: string; headers: Record<string, string>; body: string };
-export type FetchResult = { status: number; ok: boolean; text: string };
+export type FetchResult = { status: number; ok: boolean; text: string; headers?: Record<string, string> };
 export type FetchLike = (url: string, init: FetchInit) => Promise<FetchResult>;
 
 export type ClientOptions = { apiKey: string; model?: string; url?: string; /** Extra tries after a transient failure; default 1. */ retries?: number };
@@ -71,10 +71,21 @@ export function buildRequest(
 
 /** The gateway in front of Jev refused the request by its content (an HTML 403): the same request always fails. */
 export class JevBlockedError extends Error {
-  constructor(status: number) {
+  /** Start of the gateway's page, whitespace collapsed, and its response headers: what tells which rule fired. */
+  readonly body: string;
+  readonly headers?: Record<string, string>;
+  constructor(status: number, text = '', headers?: Record<string, string>) {
     super(`Jev HTTP ${status}: request blocked by the gateway (WAF)`);
     this.name = 'JevBlockedError';
+    this.body = text.replace(/\s+/g, ' ').trim().slice(0, 300);
+    this.headers = headers;
   }
+}
+
+/** Log fields for a gateway block; empty for any other error. */
+export function blockedFields(err: unknown): { blockedBody?: string; blockedHeaders?: Record<string, string> } {
+  if (!(err instanceof JevBlockedError)) return {};
+  return { blockedBody: err.body, ...(err.headers ? { blockedHeaders: err.headers } : {}) };
 }
 
 /** A failure that may pass on a second try: rate limit, server error, timeout, network. */
@@ -86,7 +97,7 @@ export class JevTransientError extends Error {
 }
 
 export function parseResponse(res: FetchResult): JevResponse {
-  if (res.status === 403 && /^\s*</.test(res.text)) throw new JevBlockedError(res.status);
+  if (res.status === 403 && /^\s*</.test(res.text)) throw new JevBlockedError(res.status, res.text, res.headers);
   if (res.status === 429 || res.status >= 500) throw new JevTransientError(`Jev HTTP ${res.status}: ${res.text.slice(0, 200)}`);
   if (!res.ok) throw new Error(`Jev HTTP ${res.status}: ${res.text.slice(0, 200)}`);
   let parsed: unknown;

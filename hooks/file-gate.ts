@@ -7,11 +7,11 @@
 // silent elsewhere; a request its gateway blocks is an ask.
 import { readStdinJson, emit } from '../src/stdin.ts';
 import { existsSync } from 'node:fs';
-import { fromEnv, defaultLogPath, thresholds } from '../src/config.ts';
+import { fromEnv, thresholds } from '../src/config.ts';
 import { rules } from '../src/rules-file.ts';
-import { ask, JevBlockedError } from '../src/jev.ts';
+import { ask, JevBlockedError, blockedFields } from '../src/jev.ts';
 import { nodeFetch, newTrace, traceFields } from '../src/node-fetch.ts';
-import { appendLog } from '../src/log.ts';
+import { logger } from '../src/log.ts';
 import { execRunner, recentTurns } from '../src/bash-context.ts';
 import { denyOutput, askOutput, allowOutput, failsClosed, UNREACHABLE_REASON, BLOCKED_REASON } from '../src/bash-policy.ts';
 import { FILE_FACTS, FILE_QUESTIONS, resolveFacts, decideFacts, rawScores } from '../src/facts.ts';
@@ -38,7 +38,7 @@ type Input = {
 };
 
 const cfg = fromEnv(process.env);
-const logPath = cfg.logPath ?? defaultLogPath(process.env);
+const log = logger(process.env, cfg);
 
 async function main(): Promise<void> {
   if (!cfg.fileEnabled) return;
@@ -53,7 +53,7 @@ async function main(): Promise<void> {
   if (!WRITE_TOOLS.has(tool)) {
     // Read and anything else: only secret paths matter, and they need no model.
     if (isSensitivePath(path)) {
-      appendLog(logPath, { ...base, action: 'denied', category: 'exposes_secret', reason: SECRET_READ_REASON });
+      log({ ...base, action: 'denied', category: 'exposes_secret', reason: SECRET_READ_REASON });
       emit(denyOutput(SECRET_READ_REASON));
     }
     return;
@@ -61,12 +61,12 @@ async function main(): Promise<void> {
 
   const repoRoot = execRunner('git', ['rev-parse', '--show-toplevel'], input.cwd)?.trim() || undefined;
   if (insideProject(path, repoRoot, input.cwd)) {
-    appendLog(logPath, { ...base, action: 'free' });
+    log({ ...base, action: 'free' });
     return;
   }
   if (!cfg.apiKey) {
     if (!failsClosed(mode)) return;
-    appendLog(logPath, { ...base, action: 'denied', reason: 'no api key' });
+    log({ ...base, action: 'denied', reason: 'no api key' });
     emit(denyOutput('jevgate: no TYPESAFE_API_KEY, refusing to write outside the project unguarded.'));
     return;
   }
@@ -83,30 +83,30 @@ async function main(): Promise<void> {
     const d = decideFacts(resolveFacts(res, FILE_FACTS, thresholds(cfg)), rules(cfg, mode), cfg.unsureOutcome);
     const entry = { ...base, facts: d.facts, ...(res.retried ? { retried: true } : {}), scores: rawScores(res, FILE_FACTS), ...traceFields(trace, t0), ms: Date.now() - t0 };
     if (d.action === 'deny') {
-      appendLog(logPath, { ...entry, action: 'denied', category: d.flags.join(', '), reason: d.reason });
+      log({ ...entry, action: 'denied', category: d.flags.join(', '), reason: d.reason });
       emit(denyOutput(d.reason));
     } else if (d.action === 'ask') {
-      appendLog(logPath, { ...entry, action: 'asked', category: d.flags.join(', '), reason: d.reason });
+      log({ ...entry, action: 'asked', category: d.flags.join(', '), reason: d.reason });
       emit(askOutput(d.reason));
     } else {
-      appendLog(logPath, { ...entry, action: 'allow' });
+      log({ ...entry, action: 'allow' });
       emit(allowOutput(d.reason));
     }
   } catch (err) {
     const blocked = err instanceof JevBlockedError;
     // a block outside bypass goes to Claude Code like an outage; in bypass nothing stands behind this hook, so a person decides
     if (blocked && failsClosed(mode)) {
-      appendLog(logPath, { ...base, action: 'asked', category: 'blocked', reason: BLOCKED_REASON, error: String(err), ...traceFields(trace, t0), ms: Date.now() - t0 });
+      log({ ...base, action: 'asked', category: 'blocked', reason: BLOCKED_REASON, error: String(err), ...blockedFields(err), ...traceFields(trace, t0), ms: Date.now() - t0 });
       emit(askOutput(BLOCKED_REASON));
       return;
     }
     const closed = failsClosed(mode);
-    appendLog(logPath, { ...base, action: 'unreachable', ...(blocked ? { category: 'blocked' } : {}), closed, error: String(err), ...traceFields(trace, t0), tries: trace.tries, ms: Date.now() - t0 });
+    log({ ...base, action: 'unreachable', ...(blocked ? { category: 'blocked' } : {}), closed, error: String(err), ...blockedFields(err), ...traceFields(trace, t0), tries: trace.tries, ms: Date.now() - t0 });
     if (closed) emit(denyOutput(UNREACHABLE_REASON));
   }
 }
 
 main().catch((err: unknown) => {
-  appendLog(logPath, { feature: 'file', action: 'error', error: String(err) });
+  log({ feature: 'file', action: 'error', error: String(err) });
   emit(denyOutput(`jevgate: hook error, refusing to write unguarded (${err instanceof Error ? err.message : String(err)})`));
 });

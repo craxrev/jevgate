@@ -42,11 +42,13 @@ test('statsLines fits the pane width and carries the styles', () => {
   assert.ok(passed.some((l) => l.text === ' passed on  no verdict, left to Claude Code'));
   assert.equal(unr.color, 'claude');
   assert.notEqual(unr.color, asked.color, 'unreachable does not read as asked');
-  const chart = lines[lines.findIndex((l) => l.text === 'Jev latency') + 1]!;
+  const title = lines.findIndex((l) => l.text === 'Jev latency · last 3 calls');
+  assert.ok(title > 0, 'the section names its window once');
+  const chart = lines[title + 1]!;
   assert.equal(chart.text.length, 1 + 30, 'the chart spans the pane even with 3 calls');
   assert.match(chart.text, /^ ▁+\S{3}$/);
   assert.equal(chart.dimHead, 1 + 27, 'the empty stretch is drawn dim');
-  assert.equal(lines[lines.findIndex((l) => l.text === 'Jev latency') + 2]!.text, ' last 3 calls · peak 1200ms');
+  assert.ok(lines.some((l) => l.text === ' all-time avg 900ms'));
   assert.equal(lines[lines.findIndex((l) => l.text === 'Your answers to asks') + 1]!.text, ' approved 2 · rejected 1');
   assert.ok(lines.some((l) => l.text === 'Asked by flag · all-time'));
   assert.ok(lines.some((l) => l.text.includes('deletes local_no_copy') && l.color === 'yellow'));
@@ -93,18 +95,20 @@ test('meanTiming averages answered calls only', () => {
   assert.deepEqual(meanTiming([tm(400, 100, 80, 70), tm(600, 100, 80, 270), tm(8000, 0, 0)]), { ms: 500, prep: 100, connect: 80, server: 170, answered: true, tries: 1 });
 });
 
-test('the pane shows where the time goes for the last call and the average', () => {
+test('one latency section: the chart, then the last call and the average split into parts, then the peak', () => {
   const lines = statsLines({ session: stats({ msRecent: [400, 600], timingRecent: [tm(400, 100, 80, 70), tm(600, 100, 80, 270)], lastCall: tm(8132, 150, 90) }), all: stats(), width: 60, entries: 5 });
   const text = lines.map((l) => l.text);
-  const i = text.indexOf('Where the time goes');
-  assert.ok(i > text.indexOf('Jev latency'));
-  assert.match(text[i + 1]!, /^ last\s+8132ms /);
-  assert.match(text[i + 2]!, /^ avg\s+500ms /);
+  const i = text.indexOf('Jev latency · last 2 calls');
+  assert.ok(i > 0);
+  assert.match(text[i + 2]!, /^ last\s+8132ms /);
+  assert.match(text[i + 3]!, /^ avg\s+500ms /);
+  assert.match(text[i + 4]!, /· peak 600ms$/);
   assert.ok(text.includes(' last call: Jev did not answer (2 tries)'));
-  assert.ok(text.includes(' avg of the last 2 answered calls'));
-  assert.ok(lines[i + 1]!.segments!.length > 1);
-  const none = statsLines({ session: stats(), all: stats(), width: 60, entries: 5 }).map((l) => l.text);
-  assert.ok(!none.includes('Where the time goes'), 'hidden until a call has timings');
+  assert.ok(!text.includes('Where the time goes'));
+  assert.ok(!text.some((l) => l.includes('this session ·') || l.includes('answered calls')));
+  assert.ok(lines[i + 2]!.segments!.length > 1);
+  const none = statsLines({ session: stats({ msRecent: [], timingRecent: [] }), all: stats(), width: 60, entries: 5 }).map((l) => l.text);
+  assert.ok(none.includes('Jev latency') && none.includes(' no judged calls yet'));
 });
 
 test('with one connection kept open, connect is left out of the legend', () => {

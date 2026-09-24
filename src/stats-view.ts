@@ -112,18 +112,16 @@ export function statsLines(v: StatsView): Line[] {
     out.push({ text: '' });
   }
 
-  out.push({ text: 'Jev latency', bold: true });
-  // a fixed frame: empty slots on the left, newest call on the right, so a short session still reads as a chart
+  // one window for the whole section: the last calls that fit the width
   const chartW = barW + 12;
   const recent = s.msRecent.slice(-chartW);
+  out.push({ text: recent.length ? `Jev latency · last ${recent.length} calls` : 'Jev latency', bold: true });
+  // a fixed frame: empty slots on the left, newest call on the right, so a short session still reads as a chart
   out.push({ text: ` ${'▁'.repeat(chartW - recent.length)}${spark(recent)}`, color: COLORS.latency, dimHead: 1 + chartW - recent.length });
-  out.push({ text: recent.length ? ` last ${recent.length} calls · peak ${Math.max(...recent)}ms` : ' no judged calls yet', dim: true });
-  out.push({ text: ` avg ${s.avgMs}ms this session · ${a.avgMs}ms all-time`, dim: true });
-  out.push({ text: '' });
+  if (!recent.length) out.push({ text: ' no judged calls yet', dim: true });
 
   const avg = meanTiming(s.timingRecent.slice(-chartW).filter((t) => t !== undefined));
   if (s.lastCall || avg) {
-    out.push({ text: 'Where the time goes', bold: true });
     const max = Math.max(s.lastCall?.ms ?? 0, avg?.ms ?? 0);
     // Jev's own time after the total, in Jev's color; both padded, so the bar starts in one place
     const jevColor = TIMING_PARTS[3].color;
@@ -144,13 +142,14 @@ export function statsLines(v: StatsView): Line[] {
     // connect only while a call in view connected on its own (0.4); with one connection kept open it is never drawn
     const shown = [s.lastCall, avg].some((t) => (t?.connect ?? 0) > 0) ? TIMING_PARTS : TIMING_PARTS.filter((p) => p.name !== 'connect');
     for (const p of shown) legend.push({ text: ' █', color: 'color' in p ? p.color : undefined, dim: 'dim' in p }, { text: ` ${p.name} `, dim: true });
+    if (recent.length) legend.push({ text: `· peak ${Math.max(...recent)}ms`, dim: true });
     out.push({ text: legend.map((g) => g.text).join(''), segments: legend });
     if (s.lastCall && !s.lastCall.answered) {
       out.push({ text: ` last call: Jev did not answer${s.lastCall.tries > 1 ? ` (${s.lastCall.tries} tries)` : ''}`, color: COLORS.unreachable });
     }
-    if (avg) out.push({ text: ` avg of the last ${s.timingRecent.slice(-chartW).filter((t) => t?.answered).length} answered calls`, dim: true });
-    out.push({ text: '' });
   }
+  if (a.avgMs) out.push({ text: ` all-time avg ${a.avgMs}ms`, dim: true });
+  out.push({ text: '' });
 
   const at = total(a);
   out.push({ text: `All-time · ${at} calls`, bold: true });

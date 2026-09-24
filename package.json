@@ -1,6 +1,6 @@
 {
   "name": "jevgate",
-  "version": "0.5.6",
+  "version": "0.5.7",
   "private": true,
   "description": "Jev-backed gates for Claude Code: bash guard for bypass mode, file guard, done-check, subagent gate, verbatim compaction.",
   "type": "module",

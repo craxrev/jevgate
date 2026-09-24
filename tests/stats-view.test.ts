@@ -114,10 +114,17 @@ test('with one connection kept open, connect is left out of the legend', () => {
   assert.match(text, / Jev /);
 });
 
-test("the latency section shows Jev's own time, last call and average, on a fixed line", () => {
-  const t = (server: number) => ({ ms: 300, prep: 20, connect: 0, server, answered: true, tries: 1 });
-  const text = statsLines({ session: stats({ lastCall: t(57), timingRecent: [t(57), t(103)] }), all: stats(), width: 44, entries: 10 }).map((l) => l.text);
-  assert.ok(text.includes(' Jev itself: last   57ms · avg   80ms'), text.join('\n'));
-  const none = statsLines({ session: stats(), all: stats(), width: 44, entries: 10 }).map((l) => l.text);
-  assert.ok(!none.some((l) => l.includes('Jev itself')));
+test("each bar row carries Jev's own time after the total, in Jev's color, at a fixed width", () => {
+  const t = (ms: number, server?: number) => ({ ms, prep: 20, connect: 0, server, answered: server !== undefined, tries: 1 });
+  const lines = statsLines({ session: stats({ lastCall: t(369, 86), timingRecent: [t(300, 60), t(400, 100)] }), all: stats(), width: 44, entries: 10 });
+  const last = lines.find((l) => /^ last +\d+ms ·/.test(l.text))!;
+  const avg = lines.find((l) => /^ avg +\d+ms ·/.test(l.text))!;
+  assert.ok(last.text.startsWith(' last    369ms ·   86ms '), last.text);
+  assert.ok(avg.text.startsWith(' avg     350ms ·   80ms '), avg.text);
+  assert.equal(last.segments!.find((g) => g.text === '  86ms')!.color, 'cyan');
+  assert.ok(!lines.some((l) => l.text.includes('Jev itself')));
+  // no answer: the same width, so the bar starts where the others do
+  const down = statsLines({ session: stats({ lastCall: t(8000), timingRecent: [] }), all: stats(), width: 44, entries: 10 }).find((l) => /^ last +\d+ms/.test(l.text))!;
+  assert.ok(down.text.startsWith(' last   8000ms' + ' '.repeat(10)), down.text);
+  assert.equal(down.text.length - down.text.trimStart().length, 1);
 });

@@ -119,17 +119,23 @@ export function statsLines(v: StatsView): Line[] {
   out.push({ text: ` ${'▁'.repeat(chartW - recent.length)}${spark(recent)}`, color: COLORS.latency, dimHead: 1 + chartW - recent.length });
   out.push({ text: recent.length ? ` last ${recent.length} calls · peak ${Math.max(...recent)}ms` : ' no judged calls yet', dim: true });
   out.push({ text: ` avg ${s.avgMs}ms this session · ${a.avgMs}ms all-time`, dim: true });
-  const avg = meanTiming(s.timingRecent.slice(-chartW).filter((t) => t !== undefined));
-  // Jev's own time, from its gateway: numbers padded so the line keeps its shape as they change
-  const jev = (ms: number | undefined) => (ms === undefined ? '   –' : String(ms).padStart(4)) + 'ms';
-  if (s.lastCall?.server !== undefined || avg?.server) out.push({ text: ` Jev itself: last ${jev(s.lastCall?.server)} · avg ${jev(avg?.server || undefined)}`, dim: true });
   out.push({ text: '' });
 
+  const avg = meanTiming(s.timingRecent.slice(-chartW).filter((t) => t !== undefined));
   if (s.lastCall || avg) {
     out.push({ text: 'Where the time goes', bold: true });
     const max = Math.max(s.lastCall?.ms ?? 0, avg?.ms ?? 0);
+    // Jev's own time after the total, in Jev's color; both padded, so the bar starts in one place
+    const jevColor = TIMING_PARTS[3].color;
     const tbar = (label: string, t: Timing) => {
-      const segs = [{ text: ` ${label.padEnd(5)}${String(t.ms).padStart(6)}ms ` }, ...timingBar(t, max, chartW - 14)];
+      const jev = t.server !== undefined ? `${String(t.server).padStart(4)}ms` : '      ';
+      const segs: Segment[] = [
+        { text: ` ${label.padEnd(5)}${String(t.ms).padStart(6)}ms` },
+        { text: t.server !== undefined ? ' · ' : '   ', dim: true },
+        { text: jev, color: jevColor },
+        { text: ' ' },
+        ...timingBar(t, max, chartW - 23),
+      ];
       out.push({ text: segs.map((g) => g.text).join(''), segments: segs });
     };
     if (s.lastCall) tbar('last', s.lastCall);

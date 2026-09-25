@@ -343,6 +343,8 @@ async function doneStep($: Host, st: GuardState, answer: string): Promise<boolea
 /** Mutable UI state for one load of the module. */
 type UiRuntime = {
   compactions: CompactionReport[];
+  /** The latest trim that stopped short of the minimum, when newer than the last report: the pane says so on top. */
+  skipped?: { at: string; why: string };
   rowCache: Map<string, string | undefined>;
   /** Calls drawn inside a group: their expanded rows are ToolUse rows, which get the line. */
   grouped: Set<string>;
@@ -433,11 +435,17 @@ export const register: Register = (on: On, options: PluginOptions) => {
     }
 
     const rank: Record<string, unknown> = {};
-    const bail = async (why: string) => {
+    const bail = async (why: string, kept = ', conversation kept as is') => {
       await appendDecision($, { feature: 'compact', action: 'kept-as-is', session, trigger: e.trigger, messages: e.messages.length, reason: why, ...rank, ms: Date.now() - t0 });
-      $.ui.toast(`jevgate: ${why}, conversation kept as is`, { timeoutMs: 8000 });
+      $.ui.toast(`jevgate: ${why}${kept}`, { timeoutMs: 8000 });
+      // an open report pane would still show the last trim that went through
+      ui.skipped = { at: new Date().toISOString(), why };
+      $.ui.invalidate('ui.render');
       return { skip: `jevgate: ${why}` };
     };
+    const minPct = Math.round(cfg.compactMinReductionRatio * 100);
+    /** Claude Code prints the skip after "Not compacted ·", so the reason says only why and what to pick instead. */
+    const tooSmall = (pct: number, what: string) => bail(`${what} would free only ${pct}%, under the ${minPct}% minimum; pick "${SUMMARY}" instead`, '');
 
     try {
       const messages = e.messages as readonly Msg[];
@@ -446,6 +454,9 @@ export const register: Register = (on: On, options: PluginOptions) => {
         headChars: cfg.compactTruncateHeadChars,
       });
       if (cands.length === 0) return bail('nothing to truncate');
+      // cutting every candidate is the most a trim can free: under the minimum, Jev's ranking cannot change the outcome
+      const best = reductionRatio(messages, apply(messages, new Set(cands.map((c) => c.id)), cfg.compactTruncateHeadChars));
+      if (best < cfg.compactMinReductionRatio) return tooSmall(Math.round(best * 100), `a trim of all ${cands.length} old outputs`);
 
       const truncate = new Set(cands.map((c) => c.id));
       const scores = new Map<string, number>();
@@ -487,7 +498,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
       const ratio = reductionRatio(messages, out);
       const ms = Date.now() - t0;
       const summary = `${truncate.size} truncated, ${restored} restored, ${Math.round(ratio * 100)}% smaller, ${ms}ms`;
-      if (ratio < cfg.compactMinReductionRatio) return bail(`only ${summary}`);
+      if (ratio < cfg.compactMinReductionRatio) return tooSmall(Math.round(ratio * 100), `a trim keeping the ${restored} outputs Jev ranked needed`);
       $.ui.toast(`jevgate: kept all ${out.length} messages, no summary (${summary})`, { timeoutMs: 8000 });
       await appendDecision($, {
         feature: 'compact', action: 'verbatim', session, trigger: e.trigger, messages: out.length,
@@ -509,6 +520,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
         };
       });
       compactions.push({ at: new Date().toISOString(), trigger: e.trigger, rows, ratio, ms, messages: out.length });
+      ui.skipped = undefined;
       if (compactions.length > 10) compactions.shift();
       try {
         await $.ui.open({ id: PANE_ID, title: 'jevgate compaction', closeOnEscape: true, rows: Math.min(20, rows.length + 3) });
@@ -746,6 +758,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
     const report = compactions[compactions.length - 1];
     if (!report) return next(e);
     const { Box, Text } = $.ui.resolve(e);
+    const skipped = ui.skipped && ui.skipped.at > report.at ? [h(Text, { color: 'yellow', wrap: 'wrap' }, `latest /compact: ${ui.skipped.why}. Below: the last trim that went through.`)] : [];
     const truncated = report.rows.filter((r) => !r.restored).length;
     const restored = report.rows.length - truncated;
     const rows = report.rows.map((r) =>
@@ -760,6 +773,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
     return el(
       Box,
       { flexDirection: 'column', width: e.props.bodyColumns, paddingX: 1 },
+      ...skipped,
       h(
         Text,
         { bold: true },

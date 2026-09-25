@@ -305,3 +305,35 @@ test('the verdict lands where answer.sh reads it, however the plugin is loaded',
     assert.equal(h.files.get(`${RUN}/verdicts/toolu_R`), '*\tallow\t"jevgate: nothing flagged"\n', root);
   }
 });
+
+/** A conversation whose old tool outputs are `share` of its text, the rest plain talk a trim never touches. */
+function talkHeavy(share: number) {
+  const outputs = 10;
+  const out = 'o'.repeat(5000);
+  const talk = 'x'.repeat(Math.round((outputs * 5000 * (1 - share)) / share));
+  const msgs: unknown[] = [{ role: 'user', text: talk, toolUses: [] }];
+  for (let i = 0; i < outputs; i++) {
+    msgs.push({ role: 'assistant', text: '', toolUses: [{ tool_use_id: `t${i}`, tool: 'Bash', input: { command: `c${i}` }, text: '' }] });
+    msgs.push({ role: 'user', text: '', toolUses: [], toolResults: [{ tool_use_id: `t${i}`, text: out, isError: false }] });
+  }
+  for (let i = 0; i < 6; i++) msgs.push({ role: 'user', text: 'recent', toolUses: [] });
+  return msgs;
+}
+
+test('a trim that cannot reach the minimum even cutting everything is refused before asking Jev, naming the way out', async () => {
+  let asked = 0;
+  const h = harness([TRIM], { value: 30 }, { useJev: true, fetch: async () => (asked++, { status: 500, ok: false, text: '', headers: {} }) });
+  const next = Object.assign(() => ({ messages: [] }), { signal: new AbortController().signal });
+  const r = (await h.handler('session.compact')(h.$, { trigger: 'manual', messages: talkHeavy(0.1) }, next as never)) as { skip?: string };
+  assert.equal(asked, 0);
+  assert.match(r.skip!, /^jevgate: a trim of all 10 old outputs would free only \d+%, under the 25% minimum; pick "Claude Code: built-in summary" instead$/);
+});
+
+test('a trim that can reach the minimum still asks Jev', async () => {
+  let asked = 0;
+  const h = harness([TRIM], { value: 30 }, { useJev: true, fetch: async () => (asked++, { status: 500, ok: false, text: '', headers: {} }) });
+  const next = Object.assign(() => ({ messages: [] }), { signal: new AbortController().signal });
+  const r = (await h.handler('session.compact')(h.$, { trigger: 'manual', messages: talkHeavy(0.8) }, next as never)) as { messages?: unknown[] };
+  assert.ok(asked >= 1);
+  assert.ok(r.messages);
+});

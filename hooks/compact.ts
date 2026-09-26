@@ -18,7 +18,7 @@ import { logLines, type Decision } from '../src/log.ts';
 import { CANCEL, LATER, SUMMARY, TRIM, choiceOf, snoozeTo, type CompactChoice } from '../src/compact-ask.ts';
 import { ask, JevTransientError, type FetchLike } from '../src/jev.ts';
 import { judgeBash, judgeFile, type GateHost } from '../src/gate.ts';
-import { doneCheck } from '../src/done.ts';
+import { doneCheck, snapshotTree } from '../src/done.ts';
 import { buildState as agentState, QUESTIONS as AGENT_QUESTIONS, decide as decideAgent } from '../src/agent-policy.ts';
 import { matchFragment, safeId, verdictText } from '../src/verdict.ts';
 import { recentTurns, turnsOf, type Row } from '../src/transcript.ts';
@@ -143,6 +143,12 @@ function runDir($: Host): Promise<string> {
   return runReady;
 }
 
+/** The throwaway git index the done-check's snapshots are built in, one per session. */
+async function indexPath($: Host): Promise<string> {
+  const session = (await $.session.id().catch(() => '')).replace(/[^A-Za-z0-9_-]/g, '');
+  return `${await runDir($)}/done-index-${session || 'x'}`;
+}
+
 /** stats.jsonl, the one file the footer, row lines and pane read. */
 async function logFiles($: Host): Promise<string[]> {
   return [`${await ownDataDir($)}/stats.jsonl`];
@@ -210,6 +216,8 @@ type GuardState = {
   /** Follow-ups sent for `request`, and the latest one's text, so its turn is not taken for a new request. */
   followUps: number;
   followUp?: string;
+  /** The working tree's snapshot when `request` started: the done-check judges what changed since. */
+  base?: string;
 };
 
 async function key($: Host, st: GuardState): Promise<string | undefined> {
@@ -318,8 +326,8 @@ async function doneStep($: Host, st: GuardState, answer: string): Promise<boolea
   const session = await $.session.id().catch(() => undefined);
   try {
     const out = await doneCheck(
-      { cfg, apiKey: k, run: hostRunner($), fetch: hostFetch($), cwd: await $.session.cwd(), timed: (p, ms) => timed($, p, ms) },
-      { session, finalMessage: answer, rows: (await $.session.messages()) as Row[], request: st.request, blocks: st.followUps },
+      { cfg, apiKey: k, run: hostRunner($), fetch: hostFetch($), cwd: await $.session.cwd(), indexPath: await indexPath($), timed: (p, ms) => timed($, p, ms) },
+      { session, finalMessage: answer, rows: (await $.session.messages()) as Row[], request: st.request, blocks: st.followUps, base: st.base },
     );
     if (out.log) await appendDecision($, out.log);
     if (out.action === 'pass') {
@@ -540,6 +548,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
     compactions.length = 0;
     guard.request = undefined;
     guard.followUps = 0;
+    guard.base = undefined;
     return next(e);
   });
 
@@ -603,6 +612,8 @@ export const register: Register = (on: On, options: PluginOptions) => {
     if (e.text.trim() && e.text !== guard.followUp) {
       guard.request = e.text;
       guard.followUps = 0;
+      // before the model runs, so the done-check can tell this request's changes from older ones
+      guard.base = cfg.doneEnabled ? await snapshotTree(hostRunner($), await $.session.cwd(), await indexPath($)).catch(() => undefined) : undefined;
     }
     if (!ticker) {
       ticker = $.clock.every(1000, () => {

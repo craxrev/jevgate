@@ -1,6 +1,6 @@
 {
   "name": "jevgate",
-  "version": "0.5.11",
+  "version": "0.5.12",
   "description": "Jev-backed gates for Claude Code: bash guard for bypass mode, file guard, done-check, subagent gate, verbatim compaction. Each feature toggles independently.",
   "license": "MIT",
   "author": {
@@ -87,7 +87,7 @@
     "doneEnabled": {
       "type": "boolean",
       "title": "Done-check",
-      "description": "When Claude says it is done and the diff does not cover the request or the final message overclaims, send a follow-up prompt so Claude goes on.",
+      "description": "When Claude says it is done and the changes since your prompt do not cover the request, or the final message claims work the diff and command output do not show, send a follow-up prompt so Claude goes on.",
       "default": false
     },
     "doneCoverMin": {

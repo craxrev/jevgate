@@ -5,61 +5,59 @@ import { checkFree } from './free.ts';
 import { needsGitStatus } from './bash-policy.ts';
 
 export type DoneState = {
-  request_first?: string;
-  request_latest?: string;
+  /** The conversation before the final message, the done-check's own follow-ups left out. */
+  recent: { role: string; text: string }[];
+  request_latest: string;
   final_message: string;
+  /** What the request changed: a git diff, or the edits as the tool calls made them outside git. */
   diff: string;
   diff_truncated: boolean;
+  /** This request's Bash commands, each with the end of its output. */
+  commands: { command: string; output_tail: string }[];
 };
+
+/** Starts every follow-up the done-check sends, so its turn is known as a continuation. */
+export const FOLLOW_UP_PREFIX = 'jevgate done-check:';
 
 export const QUESTIONS: Questions = {
   coverage: {
     type: 'score',
     instructions:
-      'How much of what `request_latest` asked for do the changes in `diff` implement? If `request_latest` was a question, a discussion, or asked only for analysis or a plan with no code change, answer the top level.',
+      'How much of what `request_latest` asked for is carried out by the changes in `diff` and the runs in `commands`? Read `request_latest` in the light of `recent`: a short follow-up such as "still broken" asks to fix what was being discussed. If `request_latest` was a question, a discussion, or asked only for analysis or a plan with no code change, answer the top level.',
     criteria: [
-      'none: the diff does not address the request, or there is no relevant change',
+      'none: the changes do not address the request, or there is no relevant change',
       'a small part: one piece of what was asked is there, most is missing',
       'most: the main change is there but something asked for is still missing (a test, a file, a case, a behavior)',
-      'all: nothing the request asked for is missing from the diff',
+      'all: nothing the request asked for is missing',
     ],
   },
   claims_backed: {
     type: 'noul',
     instructions:
-      'Every statement in `final_message` about work completed (files changed, functions added, tests written, bugs fixed, commands run successfully) is supported by what `diff` actually contains.',
+      'Every statement in `final_message` about work done is supported: changes to files and code by `diff`; commands run, builds, tests, deploys and their results by `commands` (each command with the end of its output).',
     criteria: {
-      true: 'All completion claims are visible in the diff.',
-      false: 'The message claims work that the diff does not show.',
-    },
-  },
-  leftovers: {
-    type: 'noul',
-    instructions:
-      '`diff` adds debugging leftovers: temporary print or console.log statements, TODO or FIXME placeholders standing in for required logic, commented-out code, or hard-coded test values.',
-    criteria: {
-      true: 'Debug or placeholder leftovers are present in added lines.',
-      false: 'Added lines look final.',
+      true: 'Every completion claim is visible in the diff or the command output.',
+      false: 'The message claims work or results that neither the diff nor the command output shows.',
     },
   },
   asks_user: {
     type: 'noul',
     instructions:
-      '`final_message` asks the user a question, presents options for them to choose, or explicitly waits for their decision before continuing.',
+      '`final_message` stops to ask the user something the assistant needs in order to finish `request_latest`: a choice between approaches, a missing detail, or a go-ahead for a step of that request. A question or reminder about some other pending item, or an offer of optional next steps, does not count.',
     criteria: {
-      true: 'The assistant is handing a decision back to the user.',
-      false: 'The assistant is reporting a finished result.',
+      true: 'The assistant cannot finish the request without the answer it asks for.',
+      false: 'The assistant reports the request as handled, whatever else it mentions or offers.',
     },
   },
 };
 
 /** `coverMin` is on the coverage ladder, 0 none … 3 all. */
-export type Thresholds = { coverMin: number; claimsMin: number; leftoverMax: number };
+export type Thresholds = { coverMin: number; claimsMin: number };
 
 /** What each rung of the coverage ladder means, for the block reason. */
 export function coverageWords(level: number): string {
-  if (level < 0.75) return 'the diff does not address the request';
-  if (level < 1.75) return 'only a small part of the request is in the diff';
+  if (level < 0.75) return 'the changes do not address the request';
+  if (level < 1.75) return 'only a small part of the request is done';
   return 'the main change is there, but something the request asked for is still missing (a test, a file, a case, a behavior)';
 }
 
@@ -71,7 +69,6 @@ export function decide(res: JevResponse, t: Thresholds): DoneDecision {
   const scores = {
     coverage: score(res, 'coverage'),
     claims_backed: noul(res, 'claims_backed'),
-    leftovers: noul(res, 'leftovers'),
     asks_user: noul(res, 'asks_user'),
   };
   if (scores.asks_user >= 0.7) {
@@ -82,16 +79,13 @@ export function decide(res: JevResponse, t: Thresholds): DoneDecision {
     problems.push(`${coverageWords(scores.coverage)} (coverage ${scores.coverage.toFixed(1)} of 3)`);
   }
   if (scores.claims_backed < t.claimsMin) {
-    problems.push(`the final message claims work not visible in the diff (p=${scores.claims_backed.toFixed(2)})`);
-  }
-  if (scores.leftovers > t.leftoverMax) {
-    problems.push(`debug leftovers or placeholder TODOs detected in the diff (p=${scores.leftovers.toFixed(2)})`);
+    problems.push(`the final message claims work or results that neither the diff nor the command output shows (p=${scores.claims_backed.toFixed(2)})`);
   }
   if (problems.length === 0) return { action: 'allow', reason: 'passed', scores };
   return {
     action: 'block',
     reason:
-      `jevgate done-check: ${problems.join('; ')}. ` +
+      `${FOLLOW_UP_PREFIX} ${problems.join('; ')}. ` +
       'Re-check the original request against your changes. Either finish the missing work, or state precisely why the current diff is complete.',
     scores,
   };

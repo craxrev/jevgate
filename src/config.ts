@@ -30,7 +30,7 @@ export type Config = {
   /** Coverage level (0 none … 3 all) below which the stop is blocked. */
   doneCoverMin: number;
   doneClaimsMin: number;
-  doneLeftoverMax: number;
+  doneRecentTurns: number;
   doneDiffMaxChars: number;
 
   agentEnabled: boolean;
@@ -71,7 +71,7 @@ export const DEFAULTS: Config = {
   doneMaxBlocks: 2,
   doneCoverMin: 2.5,
   doneClaimsMin: 0.5,
-  doneLeftoverMax: 0.9,
+  doneRecentTurns: 8,
   doneDiffMaxChars: 60000,
 
   agentEnabled: true,
@@ -140,7 +140,7 @@ export function fromRaw(raw: Raw): Config {
     doneMaxBlocks: num(raw.doneMaxBlocks, d.doneMaxBlocks),
     doneCoverMin: num(raw.doneCoverMin, d.doneCoverMin),
     doneClaimsMin: num(raw.doneClaimsMin, d.doneClaimsMin),
-    doneLeftoverMax: num(raw.doneLeftoverMax, d.doneLeftoverMax),
+    doneRecentTurns: num(raw.doneRecentTurns, d.doneRecentTurns),
     doneDiffMaxChars: num(raw.doneDiffMaxChars, d.doneDiffMaxChars),
 
     agentEnabled: bool(raw.agentEnabled, d.agentEnabled),

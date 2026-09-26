@@ -7,7 +7,8 @@ export type Turn = { role: 'user' | 'assistant'; text: string };
 export type Row = {
   role: 'user' | 'assistant';
   text: string;
-  toolUses?: readonly { tool: string; input: Record<string, unknown> }[];
+  /** `text` is the tool's output, once answered. */
+  toolUses?: readonly { tool: string; input: Record<string, unknown>; text?: string }[];
 };
 
 // system reminders and command echoes are not the person's words
@@ -32,10 +33,6 @@ export function latestUserPrompt(turns: Turn[]): string | undefined {
   return undefined;
 }
 
-export function firstUserPrompt(turns: Turn[]): string | undefined {
-  return turns.find((t) => t.role === 'user')?.text;
-}
-
 export function recentTurns(turns: Turn[], n: number, maxChars = 2000): Turn[] {
   if (n <= 0) return [];
   return turns.slice(-n).map((t) => ({
@@ -44,14 +41,18 @@ export function recentTurns(turns: Turn[], n: number, maxChars = 2000): Turn[] {
   }));
 }
 
-export type ToolUse = { name: string; input: Record<string, unknown> };
+export type ToolUse = { name: string; input: Record<string, unknown>; output?: string };
 
-/** Tool calls since the latest typed user prompt: the turn now ending. */
-export function turnToolUses(rows: readonly Row[]): ToolUse[] {
+/**
+ * Tool calls since the latest typed user prompt: the turn now ending. A prompt
+ * `continues` accepts (the done-check's own follow-up) does not start a turn.
+ */
+export function turnToolUses(rows: readonly Row[], continues: (text: string) => boolean = () => false): ToolUse[] {
   let start = -1;
   for (let i = rows.length - 1; i >= 0; i--) {
     const r = rows[i]!;
-    if (r.role === 'user' && r.text.trim() && !NOT_WORDS.test(r.text.trim())) {
+    const text = r.text.trim();
+    if (r.role === 'user' && text && !NOT_WORDS.test(text) && !continues(text)) {
       start = i;
       break;
     }
@@ -59,7 +60,7 @@ export function turnToolUses(rows: readonly Row[]): ToolUse[] {
   const out: ToolUse[] = [];
   for (const r of rows.slice(start + 1)) {
     if (r.role !== 'assistant') continue;
-    for (const u of r.toolUses ?? []) out.push({ name: u.tool, input: u.input });
+    for (const u of r.toolUses ?? []) out.push({ name: u.tool, input: u.input, ...(u.text !== undefined ? { output: u.text } : {}) });
   }
   return out;
 }

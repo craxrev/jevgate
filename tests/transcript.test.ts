@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { turnsOf, latestUserPrompt, firstUserPrompt, recentTurns, turnToolUses, type Row } from '../src/transcript.ts';
+import { turnsOf, latestUserPrompt, recentTurns, turnToolUses, type Row } from '../src/transcript.ts';
 
 // rows as `$.session.messages()` answers them: a tool result is a user row with no text
 const rows: Row[] = [
@@ -11,7 +11,7 @@ const rows: Row[] = [
   { role: 'user', text: 'second ask' },
   { role: 'assistant', text: '', toolUses: [{ tool: 'Edit', input: { file_path: 'b.ts' } }] },
   { role: 'user', text: '' },
-  { role: 'assistant', text: 'done', toolUses: [{ tool: 'Bash', input: { command: 'npm test' } }] },
+  { role: 'assistant', text: 'done', toolUses: [{ tool: 'Bash', input: { command: 'npm test' }, text: '2 passed' }] },
 ];
 
 test('turnsOf keeps human and assistant text, not reminders or tool results', () => {
@@ -28,7 +28,6 @@ test('turnsOf keeps human and assistant text, not reminders or tool results', ()
 
 test('prompt lookups', () => {
   const t = turnsOf(rows);
-  assert.equal(firstUserPrompt(t), 'first ask');
   assert.equal(latestUserPrompt(t), 'second ask');
   assert.equal(latestUserPrompt([]), undefined);
 });
@@ -44,8 +43,12 @@ test('recentTurns caps count and length', () => {
 test('turnToolUses: the calls since the latest typed prompt', () => {
   assert.deepEqual(turnToolUses(rows), [
     { name: 'Edit', input: { file_path: 'b.ts' } },
-    { name: 'Bash', input: { command: 'npm test' } },
+    { name: 'Bash', input: { command: 'npm test' }, output: '2 passed' },
   ]);
   // a reminder after the prompt does not start a new turn
   assert.equal(turnToolUses([...rows, { role: 'user', text: '<system-reminder>x</system-reminder>' }]).length, 2);
+  // neither does a prompt `continues` accepts
+  const followed: Row[] = [...rows, { role: 'user', text: 'go on' }, { role: 'assistant', text: 'ok' }];
+  assert.equal(turnToolUses(followed).length, 0);
+  assert.equal(turnToolUses(followed, (t) => t === 'go on').length, 2);
 });

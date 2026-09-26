@@ -210,7 +210,7 @@ function jevFake(over: { coverage?: number; inContext?: number } = {}) {
   return async (_url: string, init: { body: string }) => {
     const q = Object.keys(JSON.parse(init.body).questions);
     const answers = q.includes('coverage')
-      ? { coverage: { type: 'score', score: over.coverage ?? 3, legend: {}, probabilities: {}, confidence: 1 }, claims_backed: noulA(0.9), leftovers: noulA(0.1), asks_user: noulA(0.05) }
+      ? { coverage: { type: 'score', score: over.coverage ?? 3, legend: {}, probabilities: {}, confidence: 1 }, claims_backed: noulA(0.9), asks_user: noulA(0.05) }
       : q.includes('in_context')
       ? { in_context: noulA(over.inContext ?? 0.1) }
       : { deletes: choiceA({ none: 0.97, local_no_copy: 0.02, remote: 0.01 }), ships: choiceA({ none: 0.98, live_reversible: 0.01, public_permanent: 0.01 }), changes_system: noulA(0.03), rewrites_history: noulA(0.02), uploads_data: noulA(0.04), exposes_secret: noulA(0.02), requested: noulA(0.95) };
@@ -249,35 +249,37 @@ test('a subagent whose answer is already in the conversation is refused before i
 });
 
 test('done-check: a turn that missed part of the request gets follow-ups, at most doneMaxBlocks, then lets it stop', async () => {
-  const rows = [
+  const rows: { role: string; text: string; toolUses?: unknown[] }[] = [
     { role: 'user', text: 'Add slugify and a test for it.' },
-    { role: 'assistant', text: 'Done.', toolUses: [{ tool: 'Write', input: { file_path: 'src/slug.ts' } }] },
+    { role: 'assistant', text: 'Added slugify.', toolUses: [{ tool: 'Write', input: { file_path: 'src/slug.ts', content: 'x' } }] },
   ];
-  // a repository with one changed file
+  // a repository whose tree was aaaa… when the request started and bbbb… after
+  let snapshots = 0;
   const run = (argv: string[]) => {
+    if (argv[0] === 'sh' && String(argv[2]).includes('git write-tree')) return { exitCode: 0, stdout: `${(snapshots++ ? 'b' : 'a').repeat(40)}\n` };
     if (argv[0] !== 'git') return undefined;
-    const k = argv.slice(1).join(' ');
-    if (k === 'diff HEAD --name-only --no-color') return { exitCode: 0, stdout: 'src/slug.ts\n' };
-    if (k.startsWith('diff HEAD --no-color')) return { exitCode: 0, stdout: '+export const slugify = 1;\n' };
+    if (argv.slice(1).join(' ') === `diff --no-color --no-ext-diff ${'a'.repeat(40)} ${'b'.repeat(40)}`)
+      return { exitCode: 0, stdout: 'diff --git a/src/slug.ts b/src/slug.ts\n+export const slugify = 1;\n' };
     return { exitCode: 0, stdout: 'x\n' };
   };
   const h = harness([], { value: 30 }, { fetch: jevFake({ coverage: 1.9 }), rows, run, options: { doneEnabled: true } });
   await h.start('Add slugify and a test for it.');
+  assert.equal(snapshots, 1, 'the request starts with a snapshot');
   await h.turn(undefined, 'Added slugify.');
   await h.runTimers();
   assert.equal(h.submitted.length, 1);
   assert.match(h.submitted[0]!, /^jevgate done-check: the main change is there/);
-  // the follow-up's own turn continues the request, it does not start a new one
-  await h.start(h.submitted[0]!);
-  await h.turn(undefined, 'Added slugify.');
-  await h.runTimers();
-  assert.equal(h.submitted.length, 2);
-  await h.start(h.submitted[1]!);
-  await h.turn(undefined, 'Added slugify.');
-  await h.runTimers();
+  // the follow-up's own turn continues the request: no new snapshot, the earlier edits still count
+  for (const i of [0, 1]) {
+    await h.start(h.submitted[i]!);
+    rows.push({ role: 'user', text: h.submitted[i]! }, { role: 'assistant', text: 'It is complete.' });
+    await h.turn(undefined, 'It is complete.');
+    await h.runTimers();
+  }
   assert.equal(h.submitted.length, 2, 'past doneMaxBlocks the turn may end');
-  const actions = h.files.get(`${DATA}/stats.jsonl`)!.trim().split('\n').map((l) => JSON.parse(l).action);
-  assert.deepEqual(actions, ['block', 'block', 'cap-reached']);
+  const logged = h.files.get(`${DATA}/stats.jsonl`)!.trim().split('\n').map((l) => JSON.parse(l).action);
+  assert.deepEqual(logged, ['block', 'block', 'cap-reached']);
+  assert.equal(snapshots, 3, 'one at the start, one per judged end');
 });
 
 test('the done-check is off unless switched on', async () => {

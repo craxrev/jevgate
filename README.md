@@ -79,11 +79,24 @@ the system, was it asked for), so a change cannot dodge the Bash guard by using
 Write instead of `echo >>`. Reading a credential file (`.env`, `~/.ssh`,
 `*.pem`) is refused without asking anyone.
 
-**Done-check.** When Claude says it is done, Jev rates how much of your request
-the diff covers: none, a small part, most, all. Below "all" jevgate sends a
-follow-up prompt naming the missing rung, and Claude goes on in a new turn. At
-most twice per request. A turn that changed no files (it only ran or read
-things) is not checked.
+**Done-check.** When Claude says it is done, Jev gets your request, the last 8
+turns, Claude's final message, what changed since your prompt, and the turn's
+commands with the last 500 characters of their output. It rates how much of the
+request is done (none, a small part, most, all) and whether every claim in the
+final message ("tests pass", "deployed") shows in the diff or the output. Below
+"all", or on an unbacked claim, jevgate sends a follow-up prompt and Claude goes
+on; the follow-up's turn is judged again with the request's edits. At most twice
+per request. A turn only passes unchecked when Claude needs an answer to finish
+this request. A turn that changed no files (it only ran or read things) is not
+checked.
+
+What changed is a git snapshot of the working tree, untracked files included,
+taken when you send a prompt, diffed against one taken at the end. Older
+uncommitted changes are left out. The snapshot is built in a throwaway index
+(`~/.claude/jevgate/run`); your staging area and files are not touched, and the
+objects it writes to `.git/objects` are unreferenced, so `git gc` drops them.
+Outside git, Jev gets the edits the file tools made; edits made through Bash
+commands are then only visible as the commands themselves.
 
 **Subagent gate.** A subagent is refused when the answer is already in the last
 few messages.
@@ -241,10 +254,6 @@ says why.
 - The gateway in front of Jev blocks a few commands by content (`/etc/hosts`,
   some SQL); they are passed on to Claude Code (asked in bypass mode). To do:
   ask TypeSafe about it.
-- The done-check skips turns that changed no files, but a turn that did still
-  gets judged on the whole working-tree diff, older uncommitted changes
-  included. To do: snapshot `git diff` when the turn starts and judge only
-  what the turn added.
 - The compaction ranking sends a 300-character head per candidate; the heads are
   90% of the request. To do: a shorter ranking head (150 characters) would halve
   the call.

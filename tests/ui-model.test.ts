@@ -75,9 +75,10 @@ test('kb formatting', () => {
   assert.equal(kb(8200), '8.2k');
 });
 
-test('groupSummary lists asks and denials, then counts allows', () => {
+test('groupSummary lists asks and denials, then the one allow as is, or a count of several', () => {
   assert.deepEqual(groupSummary(['▸ jevgate allow · nothing flagged · 300ms', undefined, '▸ jevgate allow · nothing flagged · 200ms']), ['▸ jevgate allow ×2']);
-  assert.deepEqual(groupSummary(['? jevgate asked · deletes local_no_copy · 400ms', '▸ jevgate allow · nothing flagged · 1ms']), ['? jevgate asked · deletes local_no_copy · 400ms', '▸ jevgate allow ×1']);
+  assert.deepEqual(groupSummary(['? jevgate asked · deletes local_no_copy · 400ms', '▸ jevgate allow · nothing flagged · 1ms']), ['? jevgate asked · deletes local_no_copy · 400ms', '▸ jevgate allow · nothing flagged · 1ms']);
+  assert.deepEqual(groupSummary([undefined, '▸ jevgate allow · nothing flagged · 380ms', undefined]), ['▸ jevgate allow · nothing flagged · 380ms']);
   assert.deepEqual(groupSummary([undefined]), []);
 });
 

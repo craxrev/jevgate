@@ -139,11 +139,12 @@ export function bashRowText(e: LogEntry): string | undefined {
   return undefined;
 }
 
-/** The dim line under a collapsed group: every ask, denial or failure in it, then how many ran allowed. */
+/** The dim line under a collapsed group: every ask, denial or failure in it, then the allowed call's own line, or how many ran allowed. */
 export function groupSummary(lines: readonly (string | undefined)[]): string[] {
   const out = lines.filter((l): l is string => !!l && !l.startsWith('▸'));
-  const allowed = lines.filter((l) => l?.startsWith('▸ jevgate allow')).length;
-  if (allowed) out.push(`▸ jevgate allow ×${allowed}`);
+  const allowed = lines.filter((l): l is string => !!l?.startsWith('▸ jevgate allow'));
+  if (allowed.length === 1) out.push(allowed[0]!);
+  else if (allowed.length) out.push(`▸ jevgate allow ×${allowed.length}`);
   return out;
 }
 

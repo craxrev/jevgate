@@ -246,6 +246,10 @@ async function gateHost($: Host, st: GuardState): Promise<GateHost> {
     roots: await scopeRoots($),
     home: (await $.env.get('HOME')) ?? undefined,
     timed: (p, ms) => timed($, p, ms),
+    explain: async ({ system, prompt }) => {
+      const r = await $.model.complete({ model: cfg.explainModel, system, prompt, maxTokens: 120, effort: 'low', timeoutMs: cfg.explainTimeoutMs });
+      return r.isAnswered ? r.text : undefined;
+    },
   };
 }
 

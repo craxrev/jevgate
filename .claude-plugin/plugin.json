@@ -1,6 +1,6 @@
 {
   "name": "jevgate",
-  "version": "0.5.14",
+  "version": "0.5.15",
   "description": "Jev-backed gates for Claude Code: bash guard for bypass mode, file guard, done-check, subagent gate, verbatim compaction. Each feature toggles independently.",
   "license": "MIT",
   "author": {
@@ -72,6 +72,24 @@
       "title": "Guards: when Jev is unsure",
       "description": "allow, ask or deny when a fact is unsure.",
       "default": "ask"
+    },
+    "explainEnabled": {
+      "type": "boolean",
+      "title": "Guards: explain asks",
+      "description": "Before an ask prompt shows, a small model (through this session's own account) writes one sentence saying why it asks, from what Jev saw. Adds its latency to asks only.",
+      "default": true
+    },
+    "explainModel": {
+      "type": "string",
+      "title": "Guards: explain model",
+      "description": "Model alias or id for that sentence.",
+      "default": "haiku"
+    },
+    "explainTimeoutMs": {
+      "type": "number",
+      "title": "Guards: explain wait (ms)",
+      "description": "How long an ask prompt waits for the sentence before showing the flags alone.",
+      "default": 2500
     },
     "knownHosts": {
       "type": "string",

@@ -20,6 +20,12 @@ export type Config = {
   unrequestedMax: number;
   /** Outcome when Jev is unsure about a fact. */
   unsureOutcome: Outcome;
+  /** A small model writes one sentence for each ask prompt, saying why it asks. */
+  explainEnabled: boolean;
+  /** Model alias or id for that sentence. */
+  explainModel: string;
+  /** How long an ask prompt waits for it before showing the flags alone. */
+  explainTimeoutMs: number;
   /** Comma-separated hosts the user owns; uploads to them are not flagged. */
   knownHosts: string;
   /** JSON file whose entries override the outcome per fact value, optionally per mode. */
@@ -65,6 +71,9 @@ export const DEFAULTS: Config = {
   requestedMin: DEFAULT_THRESHOLDS.requestedMin,
   unrequestedMax: DEFAULT_THRESHOLDS.unrequestedMax,
   unsureOutcome: 'ask',
+  explainEnabled: true,
+  explainModel: 'haiku',
+  explainTimeoutMs: 2500,
   knownHosts: '',
 
   doneEnabled: false,
@@ -133,6 +142,9 @@ export function fromRaw(raw: Raw): Config {
     requestedMin: num(raw.requestedMin, d.requestedMin),
     unrequestedMax: num(raw.unrequestedMax, d.unrequestedMax),
     unsureOutcome: outcome(raw.unsureOutcome, d.unsureOutcome),
+    explainEnabled: bool(raw.explainEnabled, d.explainEnabled),
+    explainModel: str(raw.explainModel) ?? d.explainModel,
+    explainTimeoutMs: num(raw.explainTimeoutMs, d.explainTimeoutMs),
     knownHosts: str(raw.knownHosts) ?? d.knownHosts,
     rulesFile: str(raw.rulesFile),
 

@@ -131,6 +131,9 @@ Set in `/plugin configure jevgate`. Every feature has its own switch.
 | `knownHosts` | empty | comma-separated hosts you own (`box, arch, deploy.example.com`); uploads to them are not flagged |
 | `rulesFile` | none | JSON file that overrides outcomes, see below |
 | `unsureOutcome` | ask | what an unsure fact does |
+| `explainEnabled` | on | an ask prompt gets one sentence from a small model saying why it asks |
+| `explainModel` | haiku | model for that sentence, through the session's own account |
+| `explainTimeoutMs` | 2500 | how long an ask waits for it before showing the flags alone |
 | `hitMin` | 0.5 | probability at which a fact counts |
 | `noneMin` | 0.6 | probability of "nothing happened" needed to clear a fact |
 | `requestedMin` | 0.6 | probability at which a command counts as asked for |

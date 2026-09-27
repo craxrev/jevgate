@@ -13,6 +13,7 @@ import { knownHosts, thresholds, type Config } from './config.ts';
 import type { Decision } from './log.ts';
 import type { VerdictLine } from './verdict.ts';
 import type { Questions } from './jev.ts';
+import { EXPLAIN_SYSTEM, cleanPhrase, explainPrompt, flagMeanings, type Explainer } from './explain.ts';
 
 export type GateHost = {
   cfg: Config;
@@ -30,6 +31,8 @@ export type GateHost = {
   home?: string;
   /** `p`, or a rejection once `ms` passed. */
   timed: <T>(p: Promise<T>, ms: number) => Promise<T>;
+  /** A small model's one-line reply; absent where the host has none. */
+  explain?: Explainer;
 };
 
 /** The verdict lines for answer.sh, and the log entry (absent when nothing is logged). */
@@ -47,12 +50,33 @@ const scopeOf = (host: GateHost, ids: Ids): Scope => ({ cwd: host.cwd, roots: ho
 function decided(facts: Facts, rulesFile: unknown, cfg: Config) {
   const base = decideFacts(facts, mergeRules(DEFAULT_RULES, rulesFile, undefined), cfg.unsureOutcome);
   const lines: VerdictLine[] = [{ mode: '*', kind: base.action, reason: base.reason }];
+  const flags: string[][] = [base.flags];
   const modes = (rulesFile as { modes?: Record<string, unknown> } | undefined)?.modes;
   for (const mode of modes && typeof modes === 'object' ? Object.keys(modes) : []) {
     const d = decideFacts(facts, mergeRules(DEFAULT_RULES, rulesFile, mode), cfg.unsureOutcome);
     lines.push({ mode, kind: d.action, reason: d.reason });
+    flags.push(d.flags);
   }
-  return { base, lines };
+  return { base, lines, flags };
+}
+
+/**
+ * Adds the model's phrase to the ask lines, after their flags. One call, for the
+ * first ask line's flags; a mode asking over other flags keeps its bare reason.
+ */
+async function explained(host: GateHost, state: unknown, questions: Questions, facts: Facts, lines: VerdictLine[], flags: string[][]) {
+  const asked = flags[lines.findIndex((l) => l.kind === 'ask')];
+  if (!asked || !host.cfg.explainEnabled || !host.explain) return {};
+  const t0 = Date.now();
+  const key = asked.join(', ');
+  const prompt = explainPrompt(state, flagMeanings(facts, asked, questions));
+  const phrase = cleanPhrase(await host.explain({ system: EXPLAIN_SYSTEM, prompt }).catch(() => undefined));
+  const explainMs = Date.now() - t0;
+  if (!phrase) return { explainMs };
+  lines.forEach((l, i) => {
+    if (l.kind === 'ask' && flags[i]?.join(', ') === key) l.reason = `${l.reason} · ${phrase}`;
+  });
+  return { explanation: phrase, explainMs };
 }
 
 async function judge(
@@ -76,9 +100,10 @@ async function judge(
   try {
     const res = await host.timed(ask(fetch, { apiKey: host.apiKey!, model: cfg.model, retries: 0 }, state, questions), cfg.timeoutMs);
     const rulesFile = await host.rulesFile();
-    const { base, lines } = decided(resolveFacts(res, facts, thresholds(cfg)), rulesFile, cfg);
+    const { base, lines, flags } = decided(resolveFacts(res, facts, thresholds(cfg)), rulesFile, cfg);
     const timing = { prepMs, ms: Date.now() - t0, ...(serverMs !== undefined ? { serverMs } : {}) };
-    const logged = { ...entry, facts: base.facts, scores: rawScores(res, facts), ...timing };
+    const why = await explained(host, state, questions, base.facts, lines, flags);
+    const logged = { ...entry, facts: base.facts, scores: rawScores(res, facts), ...timing, ...why };
     const action = base.action === 'allow' ? 'allow' : base.action === 'ask' ? 'asked' : 'denied';
     return { lines, log: { ...logged, action, ...(base.action === 'allow' ? {} : { category: base.flags.join(', '), reason: base.reason }) } };
   } catch (err) {

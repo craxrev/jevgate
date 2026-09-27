@@ -129,3 +129,35 @@ test("Jev's own time comes from its gateway header", async () => {
   assert.equal(out.log?.connectMs, undefined);
   assert.equal((await judgeBash('rm -rf build', ids, host())).log?.serverMs, undefined);
 });
+
+test('an ask gets the explainer\'s sentence after its flags, from what Jev saw; the log reason stays bare', async () => {
+  const asked: { system: string; prompt: string }[] = [];
+  const h = host({
+    fetch: jev({ deletes: choice({ local_no_copy: 0.9, none: 0.05, remote: 0.05 }) }),
+    explain: async (req) => (asked.push(req), '  "Line 1 discards your\nuncommitted edits to src/app.ts."  '),
+  });
+  const out = await judgeBash('git checkout -- src/', ids, h);
+  assert.deepEqual(out.lines, [{ mode: '*', kind: 'ask', reason: 'jevgate: asking · deletes local_no_copy · Line 1 discards your uncommitted edits to src/app.ts.' }]);
+  assert.equal(asked.length, 1);
+  assert.match(asked[0]!.prompt, /deletes local_no_copy: Something on this machine with no other copy/);
+  assert.match(asked[0]!.prompt, /"command": "git checkout -- src\/"/);
+  assert.equal(out.log?.reason, 'jevgate: asking · deletes local_no_copy');
+  assert.equal(out.log?.explanation, 'Line 1 discards your uncommitted edits to src/app.ts.');
+});
+
+test('the explainer is not called for allows or denies, and a failed or empty one leaves the flags alone', async () => {
+  let calls = 0;
+  const allow = await judgeBash('rm -rf build', ids, host({ explain: async () => (calls++, 'x') }));
+  assert.equal(allow.lines[0]!.kind, 'allow');
+  const deny = await judgeBash('rm -rf s3', ids, host({ fetch: jev({ deletes: choice({ remote: 0.9, none: 0.05, local_no_copy: 0.05 }) }), explain: async () => (calls++, 'x') }));
+  assert.equal(deny.lines[0]!.kind, 'deny');
+  assert.equal(calls, 0);
+  const flagged = jev({ changes_system: noul(0.9) });
+  for (const explain of [async () => { throw new Error('down'); }, async () => undefined, async () => '   ']) {
+    const out = await judgeBash('sudo ls', ids, host({ fetch: flagged, explain }));
+    assert.deepEqual(out.lines, [{ mode: '*', kind: 'ask', reason: 'jevgate: asking · changes_system' }]);
+  }
+  const off = await judgeBash('sudo ls', ids, host({ fetch: flagged, cfg: { ...DEFAULTS, explainEnabled: false }, explain: async () => (calls++, 'x') }));
+  assert.equal(off.lines[0]!.reason, 'jevgate: asking · changes_system');
+  assert.equal(calls, 0);
+});

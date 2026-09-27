@@ -75,11 +75,16 @@ test('kb formatting', () => {
   assert.equal(kb(8200), '8.2k');
 });
 
-test('groupSummary lists asks and denials, then the one allow as is, or a count of several', () => {
-  assert.deepEqual(groupSummary(['▸ jevgate allow · nothing flagged · 300ms', undefined, '▸ jevgate allow · nothing flagged · 200ms']), ['▸ jevgate allow ×2']);
-  assert.deepEqual(groupSummary(['? jevgate asked · deletes local_no_copy · 400ms', '▸ jevgate allow · nothing flagged · 1ms']), ['? jevgate asked · deletes local_no_copy · 400ms', '▸ jevgate allow · nothing flagged · 1ms']);
-  assert.deepEqual(groupSummary([undefined, '▸ jevgate allow · nothing flagged · 380ms', undefined]), ['▸ jevgate allow · nothing flagged · 380ms']);
+test('groupSummary: one call as is, all allowed counted, otherwise the last call as is and the others counted newest first', () => {
+  const allow = '▸ jevgate allow · nothing flagged · 380ms';
+  const ask = '? jevgate asked · deletes local_no_copy · 400ms';
+  const deny = '✗ jevgate denied · ships public_permanent';
   assert.deepEqual(groupSummary([undefined]), []);
+  assert.deepEqual(groupSummary([undefined, allow, undefined]), [allow]);
+  assert.deepEqual(groupSummary([allow, undefined, allow, allow]), ['▸ jevgate allow ×3']);
+  assert.deepEqual(groupSummary([allow, allow, ask, allow]), [`${allow} · +1 asked · +2 allowed`]);
+  assert.deepEqual(groupSummary([ask, allow, deny, allow]), [`${allow} · +1 denied · +1 allowed · +1 asked`]);
+  assert.deepEqual(groupSummary([allow, `${ask} · rejected`]), [`${ask} · rejected · +1 allowed`]);
 });
 
 test('askAnswer reads your answer off how an asked call settled', () => {

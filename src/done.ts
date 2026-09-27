@@ -153,9 +153,9 @@ export async function doneCheck(host: DoneHost, input: DoneInput): Promise<DoneO
     source,
     diffChars: collected.diff.length,
     ms: Date.now() - t0,
-    request: input.request.slice(0, 2000),
-    final: final.slice(0, 2000),
     tools: uses.slice(-40).map(brief),
+    // what Jev was sent, so a verdict can be replayed; only the full log (`log` on) keeps it
+    state,
   };
   return d.action === 'block' ? { action: 'block', reason: d.reason, log } : { action: 'pass', log };
 }

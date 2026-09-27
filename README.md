@@ -163,7 +163,7 @@ none / live_reversible / public_permanent, and yes/no for `changes_system`,
 Logs live in `~/.claude/jevgate/`, owner-only:
 
 - `stats.jsonl`: one line per decision with what the footer, the row lines and `/jevgate` need (outcome, flags, timings, session), never commands, paths or prompts. Always on.
-- `decisions-v2.jsonl`: every decision in full, including the command or path and Jev's facts, scores and gateway responses. Only with the `log` option on.
+- `decisions-v2.jsonl`: every decision in full, including the command or path and Jev's facts, scores and gateway responses, and for the done-check everything Jev was sent (turns, diff, commands with output), so a verdict can be replayed. Only with the `log` option on.
 - `run/`: one file per call being judged, gone once Claude Code has the answer (see below).
 
 <details>

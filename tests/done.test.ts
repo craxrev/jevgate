@@ -96,7 +96,9 @@ test('a turn that did the work passes; one that missed part of it gets the follo
     assert.match(out.reason, /^jevgate done-check: the main change is there/);
     assert.equal(out.log.action, 'block');
     assert.equal(out.log.source, 'git');
-    assert.equal(out.log.request, 'Add slugify and a test for it.');
+    const state = out.log.state as { request_latest: string; commands: unknown[] };
+    assert.equal(state.request_latest, 'Add slugify and a test for it.');
+    assert.equal(state.commands.length, 1);
   }
 });
 

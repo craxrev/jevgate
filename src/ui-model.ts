@@ -139,13 +139,21 @@ export function bashRowText(e: LogEntry): string | undefined {
   return undefined;
 }
 
-/** The dim line under a collapsed group: every ask, denial or failure in it, then the allowed call's own line, or how many ran allowed. */
+const KIND_LABELS: Record<string, string> = { allow: 'allowed', asked: 'asked', denied: 'denied', unreachable: 'unreachable' };
+
+/**
+ * The dim line under a collapsed group, calls in order: one judged call as is,
+ * all allowed as a count, otherwise the last call as is and the others counted
+ * by kind, newest first.
+ */
 export function groupSummary(lines: readonly (string | undefined)[]): string[] {
-  const out = lines.filter((l): l is string => !!l && !l.startsWith('▸'));
-  const allowed = lines.filter((l): l is string => !!l?.startsWith('▸ jevgate allow'));
-  if (allowed.length === 1) out.push(allowed[0]!);
-  else if (allowed.length) out.push(`▸ jevgate allow ×${allowed.length}`);
-  return out;
+  const judged = lines.filter((l): l is string => !!l);
+  const kind = (l: string) => /^\S+ jevgate (\w+)/.exec(l)?.[1] ?? l;
+  if (judged.length <= 1) return judged;
+  if (judged.every((l) => kind(l) === 'allow')) return [`▸ jevgate allow ×${judged.length}`];
+  const counts = new Map<string, number>();
+  for (const l of judged.slice(0, -1).reverse()) counts.set(kind(l), (counts.get(kind(l)) ?? 0) + 1);
+  return [[judged.at(-1)!, ...[...counts].map(([k, n]) => `+${n} ${KIND_LABELS[k] ?? k}`)].join(' · ')];
 }
 
 export function kb(n: number): string {

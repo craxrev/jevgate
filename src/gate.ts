@@ -61,8 +61,8 @@ function decided(facts: Facts, rulesFile: unknown, cfg: Config) {
 }
 
 /**
- * Adds the model's phrase to the ask lines, after their flags. One call, for the
- * first ask line's flags; a mode asking over other flags keeps its bare reason.
+ * Replaces the ask lines' flags with the model's phrase. One call, for the first
+ * ask line's flags; a mode asking over other flags keeps its flags.
  */
 async function explained(host: GateHost, state: unknown, questions: Questions, facts: Facts, lines: VerdictLine[], flags: string[][]) {
   const asked = flags[lines.findIndex((l) => l.kind === 'ask')];
@@ -74,7 +74,7 @@ async function explained(host: GateHost, state: unknown, questions: Questions, f
   const explainMs = Date.now() - t0;
   if (!phrase) return { explainMs };
   lines.forEach((l, i) => {
-    if (l.kind === 'ask' && flags[i]?.join(', ') === key) l.reason = `${l.reason} · ${phrase}`;
+    if (l.kind === 'ask' && flags[i]?.join(', ') === key) l.reason = `jevgate: ${phrase}`;
   });
   return { explanation: phrase, explainMs };
 }

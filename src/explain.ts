@@ -1,7 +1,6 @@
 // One sentence for an ask prompt, saying why the call was asked, written by a
 // small model from exactly what Jev saw. It explains the verdict, never makes
-// it: the flags stay in the reason, so a phrase the command talked into saying
-// "safe" cannot hide them.
+// it; the flags stay in the log and the row under the call.
 import type { Questions } from './jev.ts';
 import type { Facts } from './facts.ts';
 

@@ -130,14 +130,14 @@ test("Jev's own time comes from its gateway header", async () => {
   assert.equal((await judgeBash('rm -rf build', ids, host())).log?.serverMs, undefined);
 });
 
-test('an ask gets the explainer\'s sentence after its flags, from what Jev saw; the log reason stays bare', async () => {
+test('an ask shows the explainer\'s sentence in place of its flags, from what Jev saw; the log reason stays bare', async () => {
   const asked: { system: string; prompt: string }[] = [];
   const h = host({
     fetch: jev({ deletes: choice({ local_no_copy: 0.9, none: 0.05, remote: 0.05 }) }),
     explain: async (req) => (asked.push(req), '  "Line 1 discards your\nuncommitted edits to src/app.ts."  '),
   });
   const out = await judgeBash('git checkout -- src/', ids, h);
-  assert.deepEqual(out.lines, [{ mode: '*', kind: 'ask', reason: 'jevgate: asking · deletes local_no_copy · Line 1 discards your uncommitted edits to src/app.ts.' }]);
+  assert.deepEqual(out.lines, [{ mode: '*', kind: 'ask', reason: 'jevgate: Line 1 discards your uncommitted edits to src/app.ts.' }]);
   assert.equal(asked.length, 1);
   assert.match(asked[0]!.prompt, /deletes local_no_copy: Something on this machine with no other copy/);
   assert.match(asked[0]!.prompt, /"command": "git checkout -- src\/"/);

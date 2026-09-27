@@ -23,7 +23,7 @@ export const QUESTIONS: Questions = {
   coverage: {
     type: 'score',
     instructions:
-      'How much of what `request_latest` asked for is carried out by the changes in `diff` and the runs in `commands`? Read `request_latest` in the light of `recent`: a short follow-up such as "still broken" asks to fix what was being discussed. If `request_latest` was a question, a discussion, or asked only for analysis or a plan with no code change, answer the top level.',
+      'How much of what `request_latest` asked for is carried out? Changes it asked for count when `diff` and `commands` show them; questions it asked, and requests to investigate, explain or propose, count when `final_message` answers them. Read `request_latest` in the light of `recent`: a short follow-up such as "still broken" asks to fix what was being discussed.',
     criteria: [
       'none: the changes do not address the request, or there is no relevant change',
       'a small part: one piece of what was asked is there, most is missing',
@@ -34,7 +34,7 @@ export const QUESTIONS: Questions = {
   claims_backed: {
     type: 'noul',
     instructions:
-      'Every statement in `final_message` about work done is supported: changes to files and code by `diff`; commands run, builds, tests, deploys and their results by `commands` (each command with the end of its output).',
+      'Every statement in `final_message` about work done is supported: changes to files and code by `diff`; commands run, builds, tests, deploys and their results by `commands` (each command with the end of its output). Statements about what the request left unchanged (behavior that stays as before), answers, explanations, findings read from `commands` and proposals are not claims of work done.',
     criteria: {
       true: 'Every completion claim is visible in the diff or the command output.',
       false: 'The message claims work or results that neither the diff nor the command output shows.',

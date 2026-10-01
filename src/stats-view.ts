@@ -40,11 +40,15 @@ export const TIMING_PARTS = [
   { name: 'connect', color: 'blue' },
   { name: 'network', color: 'magenta' },
   { name: 'Jev', color: 'cyan' },
+  { name: 'wait', color: 'magenta' },
 ] as const;
 
-function parts(t: Timing): number[] {
+/** Index into TIMING_PARTS and ms of each part; without Jev's own time, network and Jev are one wait. */
+function parts(t: Timing): [number, number][] {
   const rest = Math.max(0, t.ms - t.prep - t.connect - (t.server ?? 0));
-  return t.answered ? [t.prep, t.connect, rest, t.server ?? 0] : [t.prep, t.connect, rest];
+  const head: [number, number][] = [[0, t.prep], [1, t.connect]];
+  if (!t.answered) return [...head, [2, rest]];
+  return t.server !== undefined ? [...head, [2, rest], [3, t.server]] : [...head, [4, rest]];
 }
 
 /** A bar `t.ms / max` of `width` cells, one colored run per part. */
@@ -52,7 +56,7 @@ export function timingBar(t: Timing, max: number, width: number): Segment[] {
   const out: Segment[] = [];
   let cum = 0;
   let drawn = 0;
-  parts(t).forEach((ms, i) => {
+  for (const [i, ms] of parts(t)) {
     cum += ms;
     const to = max > 0 ? Math.min(width, Math.round((width * cum) / max)) : 0;
     if (to > drawn) {
@@ -61,16 +65,16 @@ export function timingBar(t: Timing, max: number, width: number): Segment[] {
       out.push(!t.answered && i === 2 ? { text: '·'.repeat(n), color: COLORS.unreachable } : { text: '█'.repeat(n), color: 'color' in p ? p.color : undefined, dim: 'dim' in p });
       drawn = to;
     }
-  });
+  }
   return out;
 }
 
-/** The mean of each part over answered calls. */
+/** The mean of each part over answered calls; Jev's own time only when every one of them has it. */
 export function meanTiming(ts: readonly Timing[]): Timing | undefined {
   const a = ts.filter((t) => t.answered);
   if (!a.length) return undefined;
   const m = (f: (t: Timing) => number) => Math.round(a.reduce((n, t) => n + f(t), 0) / a.length);
-  return { ms: m((t) => t.ms), prep: m((t) => t.prep), connect: m((t) => t.connect), server: m((t) => t.server ?? 0), answered: true, tries: 1 };
+  return { ms: m((t) => t.ms), prep: m((t) => t.prep), connect: m((t) => t.connect), server: a.every((t) => t.server !== undefined) ? m((t) => t.server!) : undefined, answered: true, tries: 1 };
 }
 
 const pct = (n: number, total: number) => (total ? `${Math.round((100 * n) / total)}%` : '');
@@ -140,7 +144,11 @@ export function statsLines(v: StatsView): Line[] {
     if (avg) tbar('avg', avg);
     const legend: Segment[] = [];
     // connect only while a call in view connected on its own (0.4); with one connection kept open it is never drawn
-    const shown = [s.lastCall, avg].some((t) => (t?.connect ?? 0) > 0) ? TIMING_PARTS : TIMING_PARTS.filter((p) => p.name !== 'connect');
+    const answered = [s.lastCall, avg].filter((t) => t?.answered);
+    const waited = answered.some((t) => t!.server === undefined);
+    const split = !answered.length || answered.some((t) => t!.server !== undefined);
+    const connected = [s.lastCall, avg].some((t) => (t?.connect ?? 0) > 0);
+    const shown = TIMING_PARTS.filter((p) => (p.name === 'connect' ? connected : p.name === 'wait' ? waited : p.name === 'network' || p.name === 'Jev' ? split : true));
     for (const p of shown) legend.push({ text: ' █', color: 'color' in p ? p.color : undefined, dim: 'dim' in p }, { text: ` ${p.name} `, dim: true });
     if (recent.length) legend.push({ text: `· peak ${Math.max(...recent)}ms`, dim: true });
     out.push({ text: legend.map((g) => g.text).join(''), segments: legend });

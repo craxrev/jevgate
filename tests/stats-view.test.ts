@@ -132,3 +132,23 @@ test("each bar row carries Jev's own time after the total, in Jev's color, at a 
   assert.ok(down.text.startsWith(' last   8000ms' + ' '.repeat(10)), down.text);
   assert.equal(down.text.length - down.text.trimStart().length, 1);
 });
+
+test("without Jev's own time an answered call ends in one wait, and the legend names wait instead of network and Jev", () => {
+  const t = (ms: number, server?: number) => ({ ms, prep: 20, connect: 0, server, answered: true, tries: 1 });
+  const segs = timingBar(t(400), 400, 20);
+  assert.deepEqual(segs.map((g) => g.text.length), [1, 19]);
+  assert.equal(segs.at(-1)!.color, 'magenta');
+  const lines = statsLines({ session: stats({ lastCall: t(400), timingRecent: [t(300), t(400)] }), all: stats(), width: 44, entries: 10 });
+  const text = lines.map((l) => l.text).join('\n');
+  assert.match(text, / wait /);
+  assert.doesNotMatch(text, / network | Jev /);
+  assert.ok(lines.find((l) => /^ avg /.test(l.text))!.text.startsWith(' avg     350ms' + ' '.repeat(10)), 'no Jev time on the avg row');
+  assert.doesNotMatch(statsLines({ session: stats({ lastCall: t(400, 70), timingRecent: [t(400, 70)] }), all: stats(), width: 44, entries: 10 }).map((l) => l.text).join('\n'), / wait /);
+});
+
+test("meanTiming leaves Jev's own time out unless every answered call has it", () => {
+  const t = (ms: number, server?: number) => ({ ms, prep: 20, connect: 0, server, answered: true, tries: 1 });
+  assert.equal(meanTiming([t(400, 70), t(400)])!.server, undefined);
+  assert.equal(meanTiming([t(400), t(400)])!.server, undefined);
+  assert.equal(meanTiming([t(400, 70), t(400, 90)])!.server, 80);
+});
